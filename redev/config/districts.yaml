@@ -1,0 +1,31 @@
+# districts.yaml — 자치구 단일 출처 (CLAUDE.md 규칙7)
+# ---------------------------------------------------------------------------
+# 이 프로젝트는 "4개 구만 도는 코드"가 아니라 "서울 전역 파이프라인을 N개 구
+# 설정으로 도는" 구조다. 자치구를 코드 어디에도 하드코딩하지 않는다.
+# 서울 전역 확장 = 여기에 항목 한 줄 추가 (코드 변경 없음).
+#
+# sigungu_code: 법정동코드의 시군구 부분(시도2 + 시군구3 = 5자리).
+#   PNU 앞 5자리와 동일 → redev.data.pnu.sigungu_code 로 필터링에 직접 사용.
+#   문자열로 둔다(숫자로 두면 선행 0 소실·정밀도 위험 — foundation.md 결정 A).
+#   서울특별시 = 11.
+
+districts:
+  # 학습 대상 — 모델은 이 4개 구로만 학습한다.
+  training:
+    - name: 성북구
+      sigungu_code: "11290"
+    - name: 동작구
+      sigungu_code: "11590"
+    - name: 은평구
+      sigungu_code: "11380"
+    - name: 구로구
+      sigungu_code: "11530"
+
+  # 추론/데모 전용 추가 — 학습엔 안 썼지만 추론·데모로 보여줄 구.
+  #   광흥창(마포, 경계 케이스—모아타운) / 역삼(강남, true-negative) 데모용.
+  #   GNN이 inductive면 학습 안 한 이 구들에도 추론이 돌아야 한다(Phase 3).
+  inference_extra:
+    - name: 마포구
+      sigungu_code: "11440"
+    - name: 강남구
+      sigungu_code: "11680"
