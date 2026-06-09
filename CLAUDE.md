@@ -185,3 +185,13 @@ redev/
 ## 9. 면책 / 규제
 
 이 시스템은 "투자 권유"가 아니라 "데이터 기반 참고치 + 근거 제공"이다. 가치·수익 관련 출력은 항상 추정·범위·불확실성을 명시한다. "권유" 표현을 피한다(유사투자자문·중개 규제 회색지대 회피).
+
+## 10. 커밋·브랜치 규약 (Conventional Commits)
+
+- 브랜치 = Phase 단위: `phase-N-<이름>`. PR 제목 = "Phase N: ...".
+- 커밋 = `<type>(<scope>): <설명>`
+  - type: feat / fix / docs / refactor / test / chore
+  - scope: 모듈명 (config, pnu, graph, gnn, avm, ingest …)
+- Phase는 브랜치·PR이 들고, 커밋은 conventional 타입으로 (역할 분리).
+- 한 커밋 = 한 가지 논리 변경 (잘게).
+- - 단, 초기 scaffolding 커밋은 "프로젝트 초기화"라는 하나의 논리 단위로 보아 한 덩어리 허용.
