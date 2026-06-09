@@ -1,0 +1,10 @@
+# redev — 의존성. 모듈이 늘 때마다 여기에 추가한다(Phase별 증분).
+#
+# Phase 0 (config + PNU 표준화): YAML 파싱만 필요.
+PyYAML>=6.0
+
+# --- 이후 Phase에서 추가 예정 (지금은 미설치) ---
+# Phase 1 ingest / Phase 2 graph: geopandas, shapely, pandas, psycopg2-binary, SQLAlchemy
+# Phase 3 GNN: torch, torch-geometric
+# Phase 5 AVM/Stage2: scikit-learn, shap, lightgbm 또는 xgboost
+# Phase 6 retrieval: pgvector, sentence-transformers
