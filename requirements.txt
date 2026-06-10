@@ -3,8 +3,13 @@
 # Phase 0 (config + PNU 표준화): YAML 파싱만 필요.
 PyYAML>=6.0
 
+# Phase 1 (labels 키스톤): 라벨 테이블·노후도 집계 + 공간 적재.
+pandas>=2.2       # groupby.apply(include_groups=False) 사용
+geopandas>=1.0    # SHP 적재·공간조인·좌표계 재투영(geo.py)
+pyogrio>=0.8      # 빠른 벡터 IO(속성만 읽기 등). geopandas 백엔드
+
 # --- 이후 Phase에서 추가 예정 (지금은 미설치) ---
-# Phase 1 ingest / Phase 2 graph: geopandas, shapely, pandas, psycopg2-binary, SQLAlchemy
+# Phase 2 graph/DB: shapely(geopandas에 포함), psycopg2-binary, SQLAlchemy
 # Phase 3 GNN: torch, torch-geometric
 # Phase 5 AVM/Stage2: scikit-learn, shap, lightgbm 또는 xgboost
 # Phase 6 retrieval: pgvector, sentence-transformers
