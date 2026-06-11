@@ -8,6 +8,11 @@ pandas>=2.2       # groupby.apply(include_groups=False) 사용
 geopandas>=1.0    # SHP 적재·공간조인·좌표계 재투영(geo.py)
 pyogrio>=0.8      # 빠른 벡터 IO(속성만 읽기 등). geopandas 백엔드
 
+# Phase 2 (graph): 심장1 GNN. ★CPU 빌드 — torch는 CPU 인덱스로 설치:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.2           # CPU 빌드(GPU는 Phase 3 학습 때). PyG 백엔드
+torch-geometric>=2.5 # 심장1: 필지 그래프 노드 분류
+
 # 테스트
 pytest>=8.0          # 회귀 테스트(tests/) — t-전쟁 함정 6개 고정
 
