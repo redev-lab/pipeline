@@ -145,3 +145,30 @@
   **zone_matching.py**(t-마이닝 공용 헬퍼, scripts — labels.py에서 redev/로 승격 예정).
 - **남은 키스톤**: zone_matching 승격 → positive 리더(의제처리∩parcels + t) →
   **labels.py 조립**((필지,시점) 테이블) → graph/features 시점 노후도.
+
+## [Phase 1] labels.py — (필지, 시점) 키스톤 완성 (2026-06-11)
+- **이 모듈이 한 일**: Phase 1 최종 산출물. ZoneTable(positive 구역+t) ∩ parcels +
+  신축파생·노후미지정(파생) + 해제(neg)를 합쳐 **99,964행 (필지,시점) 테이블**.
+  positive 17,977 / reliable_neg 24,497 / uncertain 57,490. 수검 통과.
+- **핵심 개념**: **WHERE/WHEN 분리** — labels는 t를 *재계산하지 않는다*. positive의 t는
+  zone_boundary(OA 마이닝·earliest-genuine)가 끝냈고, labels는 ZoneTable을 받아 ∩parcels만.
+  파생 neg의 t=현재. R2(오염 플래그)·R5(같은 PNU 다른 t 두 행)·충돌해소(같은 (pnu,t)
+  우선순위)가 여기서.
+- **설계 결정과 이유**:
+  1. **노후도 배치는 벡터화**(aging.old_ratio_by_parcel: groupby.apply→sum/mean). 7.5만
+     필지 R2/파생 분류를 apply로 돌면 분 단위 → 벡터화로 39초 전체. DRY 위해 aging에 둠.
+  2. **겹치는 구역은 earliest t**: 한 필지가 두 구역에 걸리면 더 이른 t 채택(R1 보수).
+  3. **R5는 코드 분기 없이 자연 발생**: 해제(neg,t1)+지정(pos,t2)이 다른 t라 충돌해소가
+     안 합치고 두 행 남긴다. 실측 PNU `…233042`: 2007 지정 + 2018 해제 = 두 행.
+- **네가 설명할 수 있어야**:
+  1. "labels가 t를 안 만드는데 어떻게 시점 라벨인가?" — t는 상류(zone_boundary/해제/파생)가
+     이미 박았고 labels는 *조립·∩·충돌해소*만. 관심사 분리.
+  2. "R2 오염 19%(3,442/17,977)가 왜 높나?" — 최근 지정구역(2021~25)은 as-of-t 노후도가
+     낮을 수 있다(신축 혼재·데이터). Phase 1은 *플래그만*, drop은 학습 전 검토(R2).
+  3. "positive:negative ≈ 18K:82K ≈ 1:4 — 이걸 어떻게 다루나?" — R8: focal/weighted loss
+     + PR-AUC·F1, 정확도 금지. uncertain 57K는 R4 PU로 가중차등/제외.
+- **흘려보낸 것 / 다음**: R2 19% drop 결정(Phase 2/3) · 노후도 0.2~0.5 모호대역 제외 ·
+  UQ-밖 standalone 신통/공공재개발(대표지번) v1.1 · graph/features의 *시점 t* 노후도(Phase 2).
+- **이해도 질문(§3-3)**: "같은 PNU가 positive(2007)와 negative(2018) 두 행으로 들어갔다.
+  GNN 학습 때 이 둘은 **같은 노드인가 다른 예시인가?** 그래프는 한 개인데 어떻게
+  모순 없이 둘 다 학습하나?" (힌트: §2-3 '정적 스냅샷' — t가 고르는 건 무엇인가.)
