@@ -120,10 +120,20 @@ def old_ratio_by_parcel(
     if missing:
         raise KeyError(f"정제 건물 테이블에 필수 컬럼 없음: {missing} (계약 위반)")
 
-    # groupby-apply: 각 PNU 그룹에 위 순수 함수를 적용. (개념: 필지 단위 집계)
-    # include_groups=False: 그룹키('pnu')를 연산 프레임에서 빼 경고 제거(pandas 2.2+).
-    # old_ratio_as_of는 pnu 컬럼을 안 쓰므로 빼도 안전하다.
-    return buildings.groupby("pnu", sort=False).apply(
-        lambda g: old_ratio_as_of(g, t, weight=weight),
-        include_groups=False,
-    )
+    # ★벡터화 배치(old_ratio_as_of를 PNU별 apply로 도는 대신 한 번에 — 수만 필지 빠르게).
+    # 결과는 old_ratio_as_of와 동일 의미. 단 area가중에서 gfa 결측은 0가중으로 본다
+    # (per-row 함수의 '결측 있으면 count 폴백'과 미세하게 다를 수 있으나 분류엔 무영향).
+    thr = _aging_thresholds()
+    existed = buildings[buildings["approval_year"].notna()]
+    existed = existed[existed["approval_year"] <= t]                       # ① 시점 필터(R1)
+    if existed.empty:
+        return pd.Series(dtype=float)
+    threshold = existed["structure"].map(thr).fillna(thr[_OTHER])
+    is_old = (t - existed["approval_year"]) >= threshold                   # ② 구조별 노후 판정
+    by = existed["pnu"]
+    if weight == "area" and "gross_floor_area" in existed.columns:         # ③ 면적가중 집계
+        w = pd.to_numeric(existed["gross_floor_area"], errors="coerce").fillna(0.0)
+        num = w.where(is_old, 0.0).groupby(by, sort=False).sum()
+        den = w.groupby(by, sort=False).sum()
+        return num / den                                                  # den 0이면 NaN(평가불가)
+    return is_old.groupby(by, sort=False).mean()                          # 동수 비율
