@@ -117,7 +117,14 @@ def _assemble() -> TrainingMatrix:
     labels = table.merge(feats, on=["pnu", "t"], how="left")
     labels["y"] = labels["label"].astype(int)
     labels["sigungu"] = labels["pnu"].str[:5]                 # PNU 앞5 = 시군구코드
-    keep = ["pnu", "t", "y", "certainty", "zone_id", "sigungu", *FEATURE_COLUMNS]
+    # 필지 중심좌표(EPSG:5186 m) — spatial_cv 기하버퍼(200m)용. 한 번 계산해 캐시.
+    cg = parcels[["pnu"]].copy()
+    cent = parcels.geometry.centroid
+    cg["centroid_x"], cg["centroid_y"] = cent.x.values, cent.y.values
+    labels = labels.merge(cg, on="pnu", how="left")
+    # neg_reason: hard(해제=cancelled) vs easy(신축=new_construction) 분리 리포트용(spatial_cv §6).
+    keep = ["pnu", "t", "y", "certainty", "neg_reason", "zone_id", "sigungu",
+            "centroid_x", "centroid_y", *FEATURE_COLUMNS]
     labels = labels[keep].reset_index(drop=True)
 
     n_pos = int((labels["y"] == 1).sum())

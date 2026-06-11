@@ -22,3 +22,12 @@ edge:
 density:
   # 국지 호수밀도(건물동수/면적) 반경. R6(빌라 집계 ~50m)와 정렬.
   radius_m: 50
+
+cv:
+  # 공간 CV 버퍼(R3, spatial_cv.md §4). 폭 = 모델 수용영역 = GNN 2층 = B1+ 2홉.
+  buffer_hops: 2
+  # 기하 버퍼(구 경계 피처누수 안전벨트). 4구 비인접이라 실제 제거 ~0 예상(수검 출력).
+  buffer_m: 200
+  # inner zone-holdout 그룹 수 — XGBoost k=3(조합당 수십초, 표본42 운 분산↓), GNN k=1.
+  inner_k_xgb: 3
+  inner_k_gnn: 1
