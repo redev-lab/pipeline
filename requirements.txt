@@ -8,6 +8,9 @@ pandas>=2.2       # groupby.apply(include_groups=False) 사용
 geopandas>=1.0    # SHP 적재·공간조인·좌표계 재투영(geo.py)
 pyogrio>=0.8      # 빠른 벡터 IO(속성만 읽기 등). geopandas 백엔드
 
+# 테스트
+pytest>=8.0          # 회귀 테스트(tests/) — t-전쟁 함정 6개 고정
+
 # --- 이후 Phase에서 추가 예정 (지금은 미설치) ---
 # Phase 2 graph/DB: shapely(geopandas에 포함), psycopg2-binary, SQLAlchemy
 # Phase 3 GNN: torch, torch-geometric
