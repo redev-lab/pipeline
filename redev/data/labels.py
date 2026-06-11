@@ -50,25 +50,25 @@ def _positives_from_zonetable(zone_table: gpd.GeoDataFrame, parcels: gpd.GeoData
     })
 
 
-def _flag_contamination(pos: pd.DataFrame, buildings: pd.DataFrame, th: dict) -> pd.DataFrame:
-    """R2: positive인데 *t 시점 노후도조차* 컷 미만이면 완공/철거 오염 → contaminated.
+def _flag_contamination(pos: pd.DataFrame, buildings: pd.DataFrame, th: dict, *, current_year: int) -> pd.DataFrame:
+    """R2(★구역레벨 *현재* 노후도 기준): positive 구역의 현재 노후도<컷이면 철거→신축
+    완료(완공) → 그 구역 필지 전부 contaminated=True. (Phase 1은 플래그만, drop은 학습 전.)
 
-    구역마다 t가 다르므로 t별로 묶어 as-of-t 노후도를 일괄 계산(aging 단일 정의처).
-    (Phase 1은 플래그만 — 삭제는 검토 후.)
+    ★왜 현재인가(수검 교정): 필지 as-of-t<컷은 "완공"이 아니라 "t시점 안 낡은 1990년대
+    필지"를 과대플래그한다(3,442필지). 완공구역은 옛 건물 철거로 as-of-t가 NaN이라 오히려
+    *놓친다*(응암2 백련산: as-of-2008=NaN, 현재=0.00). 현재 노후도가 올바른 완공 탐지기.
+    설계: labels.md §2-2. 생존편향(완공 성공구역 누락)은 §13 + v1.1 말소대장.
     """
     cut = th["label_hygiene"]["min_old_ratio_for_positive"]
     flagged = pos.copy()
-    flagged["contaminated"] = False
-    pnu_set = set(pos["pnu"])
-    bsub = buildings[buildings["pnu"].isin(pnu_set)]
-    for t, grp in pos.groupby("t"):
-        if pd.isna(t):
-            continue
-        ratio = old_ratio_by_parcel(bsub, int(t), weight="area")  # as-of-t
-        contaminated_pnus = set(ratio[ratio < cut].index)
-        mask = (flagged["t"] == t) & flagged["pnu"].isin(contaminated_pnus)
-        flagged.loc[mask, "contaminated"] = True
-    return flagged
+    now = old_ratio_by_parcel(
+        buildings[buildings["pnu"].isin(set(pos["pnu"]))], current_year, weight="area"
+    )
+    flagged["_now"] = flagged["pnu"].map(now)
+    zone_now = flagged.groupby("zone_id")["_now"].mean()        # 구역레벨 현재 노후도
+    completed = set(zone_now[zone_now < cut].index)             # 완공 구역
+    flagged["contaminated"] = flagged["zone_id"].isin(completed)
+    return flagged.drop(columns="_now")
 
 
 def _derived_neg_uncertain(
@@ -140,7 +140,7 @@ def build_label_table(
     """
     th = load_thresholds()
     pos = _positives_from_zonetable(zone_table, parcels)
-    pos = _flag_contamination(pos, buildings, th)
+    pos = _flag_contamination(pos, buildings, th, current_year=current_year)
     positive_pnus = set(pos["pnu"])
 
     canc = _cancelled_to_rows(cancelled_df)

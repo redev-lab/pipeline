@@ -64,9 +64,15 @@ ingest가 적재한 원천들(건물·의제처리경계·신통·정비사업·
 | **R4** | 각 행에 `확신도(certainty)` 컬럼: positive / reliable_negative / uncertain. PU 학습기가 이 컬럼을 읽어 uncertain을 가중치 차등 또는 제외. |
 | **R11** | 각 행의 PNU를 *피처 계산에 쓸 현재 필지*로 해석(resolve)해야 하므로, 매핑 실패가 자연히 이 단계에서 잡힌다 → drop + 결측률 기록. |
 
-추가로 **R2(완공·철거 오염)**: positive인데 *t 시점 노후도조차* 50% 미만이면
-(config `label_hygiene.min_old_ratio_for_positive`), 이미 신축됐거나 데이터가
-오염된 것 → `contaminated=True` 플래그(Phase 1은 목록만, 삭제는 검토 후).
+추가로 **R2(완공·철거 오염) — ★2026-06-11 재정의: "구역레벨 *현재* 노후도" 기준**.
+positive 구역의 *현재* 노후도가 컷(`label_hygiene.min_old_ratio_for_positive`) 미만이면
+철거→신축 완료(완공)로 보고 `contaminated=True`(Phase 1은 플래그만, drop은 학습 전).
+- ★왜 *현재*인가(수검으로 교정): 처음엔 *필지 as-of-t* 노후도<컷으로 짰는데, 이건
+  "완공"이 아니라 "t시점에 안 낡았던 1990년대 필지"를 잡아 3,442필지(19%)를 과대플래그
+  했다. **완공 구역은 옛 건물이 철거돼 as-of-t가 NaN**(사용승인≤t 건물 소멸)이라 오히려
+  *놓친다*. 검증: 응암제2(백련산 힐스테이트 완공) as-of-2008=NaN→옛플래그 놓침 /
+  현재노후도=0.00→재정의 플래그가 잡음. 4구 실측 **9구역 완공**(응암1/2/10/11·석관2·
+  수색4·흑석·길음, 현재노후 0.00).
 
 > **구체 예시 (장위, 숫자로):**
 > - PNU `1129010800...`, t=2014: 해제됨 → `(p, 2014, label=0, reliable_negative,
@@ -278,7 +284,7 @@ Phase 5. 배제레이어는 v1 보류(§11).
 | `_uncertain_old_undesignated(parcels, aging, cfg)` | 노후도≥cut & 미지정 → uncertain. |
 | `_resolve_zone_to_pnus(polygon, parcels)` | 폴리곤 ∩ parcels 대표점(within) — _positives가 씀. |
 | `_resolve_pnu_over_time(rows, parcels)` | R11 현재필지 존재확인·drop. |
-| `_flag_contamination(rows, aging, cfg)` | R2 오염 플래그(t-노후도<컷). |
+| `_flag_contamination(pos, buildings, cfg)` | R2 ★구역레벨 *현재* 노후도<컷=완공 → contaminated(필지 as-of-t 아님 — §2-2). |
 | `_resolve_conflicts(rows)` | 같은 (pnu,t) 우선순위 병합. |
 
 > ★positive의 t-해소(OA 마이닝·6소스 earliest-genuine·사이클가드)는 **zone_boundary.py가
@@ -369,6 +375,12 @@ config on/off):
 - **[커버리지] 해제 full-zone 미커버**(seed 기반). v1.1 k-hop/면적 확장(§4.6).
 - **[커버리지] 신통 폴리곤 미매칭분** PNU 해석 부분적(§4.5).
 - **[t 부분해결] 의제처리 잔여 구역 보류**(§11) — 지정일 확보 시 합류.
+- **★[생존편향] 완공 구역(R2 contaminated 9구역) drop 시 "끝까지 성공한 구역"이
+  positive에서 빠짐.** 의제처리 소스는 완공구역을 지우지 *않지만*(응암2 존재), 우리
+  R2가 빼면 성공사례 누락 → 모델이 "진행 중" 구역만 배우는 편향. 완공구역은 옛 건물이
+  철거돼 as-of-t 노후도가 NaN/오염 → v1은 drop 후보(플래그만). **v1.1: 말소·폐쇄
+  건축물대장으로 철거 건물 복원 → as-of-t 노후도 재계산 → 완공구역도 라벨 부활**
+  ('데이터 보강 대기', 폐기 아님).
 - **[학습분포 왜곡 리스크 — 대부분 해소] 보류 66%→4%(3/73).** 최종 구별: 성북 0% /
   구로 0% / 동작 5% / 은평 8%. 쏠림 사실상 소멸. 잔여 3(연신내·독바위·사당동252)은
   "변경" 제목이라 추정 금지로 보류 — 깨끗한 지정 증거 확보 시(상세 고시 추적) 합류.
