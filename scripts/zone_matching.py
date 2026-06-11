@@ -22,7 +22,20 @@
 import re
 
 # 정비구역 관련 결정만 거르는 키워드 (지구단위계획·도시계획시설 등 무관 결정 배제)
-REDEV_TITLE_KW = ("재개발", "정비구역", "정비계획", "정비사업")
+# '재정비촉진' 포함: 촉진지구 지정·촉진계획 결정도 재개발 결정으로 인정(촉진 부모 회수).
+REDEV_TITLE_KW = ("재개발", "정비구역", "정비계획", "정비사업", "재정비촉진")
+
+# 연결자 문자(·, middle-dot 계열) + cp949 깨짐('수색?증산'의 ?)을 일반 규칙으로 제거.
+# 특정 케이스 패치가 아니라 "한글 사이 연결자 제거"로 '수색·증산'='수색?증산'='수색증산'.
+_CONNECTORS = "·・･‧•∙ㆍ"
+
+
+def clean_text(s) -> str:
+    """제목/구역명에서 연결자·인코딩 깨짐 문자를 제거(소스 무관 정규화 1단계)."""
+    s = str(s)
+    s = re.sub(f"[{_CONNECTORS}]", "", s)         # middle-dot 계열 제거
+    s = re.sub(r"(?<=[가-힣])\?(?=[가-힣])", "", s)  # 한글 사이 cp949 깨짐 ? 제거
+    return s
 # 재정비촉진 부모지구명 (sub-구역 t 근사용)
 PROMOTION_PARENTS = ("수색증산", "흑석", "노량진", "길음", "장위", "한남", "이문휘경",
                      "신정", "방화", "거여마천", "북아현", "미아", "상계")
@@ -49,7 +62,7 @@ def normalize_zone_name(title) -> set:
       - 선두 'XX[제]N'             예: '돈암제6 주택재개발' → {돈암6}
     정규화: 제N→N, 공백 제거. (한 제목이 여러 구역 참조 가능 → set)
     """
-    s = str(title).replace(" ", "")
+    s = clean_text(title).replace(" ", "")
     toks = set()
     # ([가-힣]{2,4}?) 비그리디 — '제'를 한글부가 삼키지 않게(돈암제6→돈암6).
     for grp in re.findall(r"[\(（]([^\)）]*)[\)）]", s):
@@ -64,14 +77,20 @@ def normalize_zone_name(title) -> set:
 
 
 def region_of(token) -> str:
-    """토큰('돈암6')에서 지역명('돈암')만 분리 — 동명→구 가드용."""
+    """토큰('돈암6'/'응암동700')에서 지역명('돈암'/'응암')만 분리 — 동명→구 가드용.
+
+    trailing '동'/'가' strip: 지번형 토큰('응암동700')의 지역이 '응암동'이 되어
+    동맵 키('응암', 동 제거형)와 어긋나는 문제 해결. (단 2자 미만으로 줄면 보존.)
+    """
     m = re.match(r"([가-힣]+)", str(token))
-    return m.group(1) if m else ""
+    r = m.group(1) if m else ""
+    stripped = re.sub(r"(동|가)$", "", r)
+    return stripped if len(stripped) >= 2 else r
 
 
 def parent_of(title) -> str | None:
     """제목이 재정비촉진 sub-구역이면 부모 촉진지구명 반환, 아니면 None."""
-    s = str(title)
+    s = clean_text(title)
     if "재정비촉진" not in s:
         return None
     for p in PROMOTION_PARENTS:
