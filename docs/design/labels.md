@@ -103,12 +103,14 @@ ingest가 적재한 원천들(건물·의제처리경계·신통·정비사업·
 | `pnu` | str(19) | 필지 고유키(현재 필지로 resolve된, R11 통과분). |
 | `t` | int(연도) | 라벨 시점. (원본 날짜는 `t_date`에 보존) |
 | `t_date` | date\|null | 감사용 원본 일자. 연도 granularity가 노후도 계산엔 충분. |
-| `t_source` | enum | t의 출처: `shintong_select`/`first_designation_gosi`/`cancel_date`/`derived_current`. ★틀린 t 섞임 추적·차단(정직성). |
+| `t_source` | enum | t 출처: `oa_first_decision`(1차)/`promotion_parent`/`shintong_select`/`first_designation_gosi`/`cancel_date`/`derived_current`/`gosi_list`/`public_redev`. ★틀린 t 섞임 추적·차단. |
+| `t_alt` | date\|null | **보조 t**(불일치 케이스의 다른 소스 날짜 보존). 감사·재판정용 — 채택값=`t`, 후보=`t_alt`. |
 | `label` | int(0/1) | 1=재개발 진행/지정, 0=네거티브. |
 | `certainty` | enum | `positive` / `reliable_negative` / `uncertain` (R4 키). |
 | `source` | enum | `신통`/`정비사업`/`의제처리경계`/`해제`/`신축파생`/`노후미지정`. |
 | `neg_reason` | enum\|null | `cancelled`/`new_construction`/`not_yet`. (배제레이어는 v1 보류) |
 | `zone_id` | str\|null | 구역 식별자(NTFC_SN 등). ★R3 공간 CV를 *구역 단위로* 묶는 키. |
+| `zone_type` | enum\|null | `UQ1221`(주택정비형)/`UQ1222`(도시정비형). **학습엔 둘 다 positive**, 분석·Phase4 경로검증에서 구분용. |
 | `contaminated` | bool | R2 오염 의심(positive인데 t-노후도<컷). 학습 전 drop 후보. |
 
 부산물(테이블 아님, 사이드카 리포트):
@@ -119,28 +121,41 @@ ingest가 적재한 원천들(건물·의제처리경계·신통·정비사업·
 
 ## 3.5 ★t 소스맵 (어느 라벨이 어느 t를 쓰는가)
 
-| source | label | certainty | **t =** | t_source | 출처 컬럼 |
-|---|---|---|---|---|---|
-| 신통 | 1 | positive | **신통선정일** | `shintong_select` | 신통 CSV `신통선정일` |
-| 정비사업 | 1 | positive | **최초 정비구역 지정고시일** | `first_designation_gosi` | 정비사업 CSV `고시일` (돈암제6=2011 검증) |
-| 해제 | 0 | reliable_negative | **해제일자** | `cancel_date` | 해제 CSV `해제일자` |
-| 신축파생 | 0 | reliable_negative | **현재(최신 데이터 연도)** | `derived_current` | building_gis 파생 |
-| 노후미지정 | 0 | uncertain | **현재** | `derived_current` | building_gis 파생 |
+★**2026-06-11 개정 — OA-20283(결정고시)이 positive의 1차 t 소스.** 의제처리 폴리곤의
+NTFC_SN → `normalize_zone_name` 토큰 → 동명→구 가드 → OA `MIN(결정, 재건축·무관 배제)`
+= **최초 정비구역 지정일**. 73 폴리곤 중 64개(88%)가 이걸로 t 확보(보류 66%→12%).
+**신통선정일·정비사업고시일은 1차에서 교차검증·보완으로 강등**(§4).
 
-> 의제처리 폴리곤은 **t를 주지 않는다** — 경계(geometry)만 공급. t는 신통·정비사업에서.
+| source(positive) | **t =** | t_source | 비고 |
+|---|---|---|---|
+| 의제처리(OA 회수) | **최초 결정고시일** | `oa_first_decision` | 1차. earliest-genuine(재건축 배제) |
+| 의제처리(촉진 sub) | **부모 촉진지구 결정일** | `promotion_parent` | 근사치(sub 고유일 아님) |
+| 신통 | 신통선정일 | `shintong_select` | OA 없을 때/교차검증 |
+| 정비사업 | 정비사업 고시일 | `first_designation_gosi` | 교차검증·보완 |
+| (향후) 고시목록/공공재개발 | 고시일/선정일 | `gosi_list`/`public_redev` | 잔여 보류용(1-a/1-b) |
+
+| source(negative) | **t =** | t_source |
+|---|---|---|
+| 해제 | 해제일자 | `cancel_date` |
+| 신축파생 / 노후미지정 | 현재(최신 데이터 연도) | `derived_current` |
+
+> 불일치(OA vs 정비사업) 시 **earliest-genuine 채택**(t), 다른 날짜는 `t_alt`에 보존.
+> 의심 회수는 토큰이 제목에 *독립 구역명*으로 등장하는지 1건 검증 후 통과(흑석1=1986
+> 검증 완료: '흑석제1주택개량재개발구역사업계획결정' 1986 — 진짜).
 
 ---
 
 ## 4. 출처 → 행 생성 규칙 (WHERE/WHEN 분리)
 
-### 4-1. positive (label=1, certainty=positive) — 소스 3개
-- **의제처리 폴리곤 = WHERE 공급자.** 경계 geometry만 제공. *그 자체로는 라벨 아님*
-  (clean t 없음). 신통·정비사업이 t를 붙여줄 때만 positive가 된다.
-- **신통 = WHEN(신통선정일) + positive 판정.** WHERE = 구역명→의제처리 폴리곤 매칭
-  → ∩ parcels. (폴백: 정보몽땅 대표지번 seed.)
-- **정비사업(CSV 17) = WHEN(최초 지정고시일) + positive.** WHERE = 지번 seed→parcels
-  →그 점을 contains 하는 의제처리 폴리곤 → ∩ parcels(구역 전체 PNU).
-- **t 안 붙는 의제처리 폴리곤 = 보류(제외)** — §11. 절대 추정 날짜로 채우지 않는다.
+### 4-1. positive (label=1, certainty=positive) — WHERE=의제처리 폴리곤, WHEN=OA 1차
+★**2026-06-11 개정: t 1차 소스 = OA-20283(결정고시) 이력 마이닝.** 의제처리 폴리곤이
+WHERE(경계)와 NTFC_SN을 동시에 준다 — NTFC_SN→토큰→OA `MIN(결정)` = **최초 지정일**.
+- **의제처리 폴리곤 + OA 최초결정** → positive. WHERE=폴리곤 ∩ parcels, t=OA(`oa_first_decision`).
+- **촉진 sub-구역**: OA 토큰 직매칭 실패 시 **부모 촉진지구 최초결정**을 t로(`promotion_parent`, 근사).
+- **신통선정일·정비사업 고시일 = 교차검증·보완**(강등). OA 없을 때 보완, 있을 때 일치검증.
+  불일치는 earliest-genuine 채택 + `t_alt` 보존(§3.5).
+- **t 안 붙는 폴리곤 = 보류(제외)** — §11. 절대 추정 날짜로 채우지 않는다.
+  (실측: 73 폴리곤 중 64개 t 확보, 9개만 진짜 보류 — §11.)
 
 ### 4-2. reliable_negative (label=0, certainty=reliable_negative) — R4의 "확실한 쪽"
 - **해제**(reason=cancelled): 해제구역 위치(지번)→cancelled.py 파서→parcels seed PNU.
@@ -305,6 +320,14 @@ config on/off):
 - **t 없는 UQ181 의제처리 잔여 구역**(신통·정비사업 미매칭)은 **제외(보류)**. 절대
   추정 날짜로 채우지 않는다. dropped 리포트에 `reason=no_clean_t`로 기록. 지정일
   확보(상세 스크래핑 등) 시 v1.1 합류.
+  - ★**UQ1222(도시정비형) 8개는 전부 보류**(t 미확보) — 신통·정비사업 CSV가
+    주택재개발 중심이라 도시정비형 t가 안 나올 가능성 높다. dropped에
+    `reason=no_clean_t, note=uq1222`로 표기. **v1.1 고시 스크래핑 1순위 후보.**
+  - ※in-scope 73 유지(재건축·타법 오염 0 실측). **매칭 개선으로 보류 66%(48)→12%(9)**:
+    OA-20283 최초결정 마이닝(동명가드+재건축배제) +24, 촉진 부모매칭 +11, 신통/정비사업 +25.
+  - **최종 진짜 보류 9개 = 역세권 도시정비형(대조동59·연신내·독바위·사당동252) +
+    공공재개발(본동·남구로) + 2025 신규(응암동700/755).** OA에 옛 결정 없는 최근건 →
+    1-a(고시목록)·1-b(공공재개발)로만 회수.
 - **노후도 0.2~0.5 모호대역**(~73필지): 미라벨/제외.
 - **배제레이어**: 문화재 SHP 1건뿐(불완전) → v1 보류. 데이터 보강 후 재도입.
 
@@ -334,6 +357,11 @@ config on/off):
 - **[커버리지] 해제 full-zone 미커버**(seed 기반). v1.1 k-hop/면적 확장(§4.6).
 - **[커버리지] 신통 폴리곤 미매칭분** PNU 해석 부분적(§4.5).
 - **[t 부분해결] 의제처리 잔여 구역 보류**(§11) — 지정일 확보 시 합류.
+- **[학습분포 왜곡 리스크] 보류 잔여(12%)가 은평구·역세권 도시정비형에 쏠림.**
+  매칭 개선 후 구별 보류율: 성북 0% / 동작 10% / 구로 17% / **은평 25%**. 은평 잔여는
+  역세권 도시정비형(대조동59·연신내·독바위)이 은평에 집중된 **데이터 공백**(매칭 결함
+  아님, OA에 옛 결정 없음). v1.1 **1-a/1-b로 회수** → 미회수 시 은평·역세권유형 과소대표
+  → 해당 입지 예측 신뢰 저하. 우선 추적.
 
 ---
 
