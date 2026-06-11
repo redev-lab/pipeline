@@ -19,8 +19,18 @@ from pyogrio import read_dataframe
 from redev.data.geo import to_target_crs
 from redev.data.pnu import normalize_pnu, parse_pnu
 
-_COLUMN_MAP = {"A1": "pnu", "A3": "dong_addr", "A4": "jibun", "A7": "sigungu"}
+_COLUMN_MAP = {"A1": "pnu", "A3": "dong_addr", "A4": "jibun", "A5": "jimok_raw", "A7": "sigungu"}
 _SRC_COLUMNS = list(_COLUMN_MAP.keys())
+
+
+def _parse_jimok(s) -> str | None:
+    """A5('179-3대'/'산39-25임') → 지목 1자('대'/'임'). 끝의 한글.
+
+    역할: 그래프 노드 제외(도로·하천 등 비주거)·접도 피처(지목='도' 인접)의 키.
+    """
+    import re
+    m = re.search(r"([가-힣]+)$", str(s))
+    return m.group(1) if m else None
 
 
 def _where_clause(sigungu_codes) -> str:
@@ -88,6 +98,8 @@ def load_parcels(
             return None
 
     gdf["pnu"] = gdf["pnu"].map(_safe)
+    gdf["jimok"] = gdf["jimok_raw"].map(_parse_jimok)   # 지목(노드제외·접도용)
+    gdf = gdf.drop(columns="jimok_raw")
     n_bad = int(gdf["pnu"].isna().sum())
     gdf = gdf[gdf["pnu"].notna()].copy()
 
@@ -98,6 +110,7 @@ def load_parcels(
         "sigungu_counts": gdf["sigungu"].value_counts().to_dict(),
         "dong_missing": int(gdf["dong_addr"].isna().sum()),
         "jibun_missing": int(gdf["jibun"].isna().sum()),
+        "jimok_counts": gdf["jimok"].value_counts().head(15).to_dict(),
     }
     return gdf, report
 
