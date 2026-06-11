@@ -1,6 +1,14 @@
 # 인수인계 (다음 세션)
 
-**Phase 3 진행 중** — `phase-3-models` 브랜치. 데이터층·공간CV·베이스라인(노드 사다리) 완료.
+**Phase 3 완료** — `phase-3-models` 브랜치. 심장1 노드 분류 + R9 통제비교 마무리.
+
+## ★Phase 3 최종 판정 (R9)
+- 통합 점수표(LODO pooled): B-2 0.640 / B1 0.932 / B1+ **0.934** / GNN 0.929 / GNN+pretrain 0.928.
+- **GNN은 천장(B1+) 못 넘고 미세 열세** — zone-block bootstrap Δ +0.006, CI [+0.002,+0.012](0 불포함).
+  사전학습 리프트 ≈0. → **데이터 병목(R9), v1 추론모델 = B1.** GNN 보존(README v2 조건).
+- 다음 = **Phase 4 (Stage1 룰셋, `rules/stage1.py`)** — 학습 아니라 결정론 루브릭(claude_code_phases.md).
+
+## 완료 (커밋)
 
 ## 완료 (커밋)
 - **3-A** `load_training_matrix`(39,741행 캐시) + per-t `neighbor_aggregate`(R1 누수차단 실증). [5017a5b]

@@ -162,4 +162,4 @@ def evaluate(predict_fn, folds: list[Fold], labels, *, model: str = "model") -> 
         "battleground_recall": bg, "battleground_n": bgn,
         "neg_split": neg_split_report(yt, p, nr[m], bt),
     }
-    return {"model": model, "pooled": pooled, "per_fold": per_fold}
+    return {"model": model, "pooled": pooled, "per_fold": per_fold, "all_p": all_p}
