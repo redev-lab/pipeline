@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from redev.config import training_sigungu_codes
+from redev.config import load_graph_config, training_sigungu_codes
 from redev.data.ingest.building_gis import load_buildings
 from redev.data.ingest.cancelled import load_cancelled
 from redev.data.ingest.parcels import build_jibun_index, load_parcels
@@ -314,3 +314,95 @@ def prepare_baseline_matrix(*, force_rebuild: bool = False, hops: int = 2) -> pd
     _PROCESSED.mkdir(parents=True, exist_ok=True)
     aug.to_parquet(_CACHE_NB, index=False)
     return aug
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# 모델 — 대조군. 모두 같은 v1 피처·같은 fold(R9 공정). spatial_cv.evaluate가 채점.
+# ──────────────────────────────────────────────────────────────────────────
+def feature_sets(aug: pd.DataFrame) -> dict:
+    """증강행렬에서 모델별 피처 컬럼 묶음. B1=self+1홉, B1+=self+1·2홉(R9 도달범위)."""
+    nb1 = [c for c in aug.columns if c.startswith("nb1_")]
+    nb2 = [c for c in aug.columns if c.startswith("nb2_")]
+    return {"B1": list(FEATURE_COLUMNS) + nb1, "B1+": list(FEATURE_COLUMNS) + nb1 + nb2}
+
+
+def aging_floor_predict(aug: pd.DataFrame):
+    """B-2 동어반복 바닥선: 점수=aging 그대로(무학습). best-F1 임계가 컷을 정함.
+
+    aging=0 positive는 어떤 양수 임계에서도 못 잡힌다 → 격전지 recall 정의상 0%
+    (R9 0점선). PR-AUC는 'aging 단독 랭킹력' = 라벨링 규칙 되외우기의 점수.
+    """
+    aging = aug["aging"].to_numpy()
+    return lambda train_idx, test_idx: aging[test_idx]
+
+
+# XGBoost 하파 좁은 탐색(환경요청): depth{3,5}×lr{0.05,0.1} 4조합 수동.
+_XGB_COMBOS = [(3, 0.05), (3, 0.1), (5, 0.05), (5, 0.1)]
+
+
+def _make_xgb(depth, lr, *, spw):
+    import xgboost as xgb
+    # CPU hist(환경: GPU 없음). aucpr=불균형 직접 최적화. early stopping=과적합·CPU.
+    return xgb.XGBClassifier(
+        max_depth=depth, learning_rate=lr, n_estimators=600,
+        tree_method="hist", n_jobs=-1, subsample=0.8, colsample_bytree=0.8,
+        eval_metric="aucpr", early_stopping_rounds=30, scale_pos_weight=spw,
+    )
+
+
+def _spw(y) -> float:
+    """scale_pos_weight=n_neg/n_pos. 실측 1.6 근처라 거의 1(R8 재프레이밍)."""
+    pos = int((y == 1).sum())
+    return (int((y == 0).sum()) / pos) if pos else 1.0
+
+
+def _fit_predict_xgb(aug, feat_cols, tr_idx, va_idx, te_idx, depth, lr):
+    """inner-train으로 학습(early stopping은 inner-val) → test 확률. 단일 적합."""
+    X = aug[feat_cols].to_numpy(np.float32)
+    y = aug["y"].to_numpy()
+    m = _make_xgb(depth, lr, spw=_spw(y[tr_idx]))
+    m.fit(X[tr_idx], y[tr_idx], eval_set=[(X[va_idx], y[va_idx])], verbose=False)
+    return m.predict_proba(X[te_idx])[:, 1], int(m.best_iteration or 0)
+
+
+def run_xgb_cv(aug, feat_cols, edge_index, pnu_to_idx, *, model_name: str, cfg=None) -> dict:
+    """B1/B1+ 전체 평가: inner k=3 하파선택(fold횡단 한세트 고정) → LODO 채점.
+
+    ★하파는 outer fold마다 따로 고르지 않는다(과적합). 각 (fold,조합)의 inner k=3 평균
+    PR-AUC를 구해 c*=argmax 한 조합 고정 → 그 c*로 각 outer fold를 per-fold early stopping
+    으로 재학습(라운드만 fold별 조정, §5). 선정표를 리포트에 남김.
+    """
+    from redev.eval.spatial_cv import build_lodo_folds, evaluate, spatial_zone_groups
+    cv = (cfg or load_graph_config())["cv"]
+    folds = build_lodo_folds(aug, edge_index, pnu_to_idx, cfg=cfg)
+
+    # ── 하파선택: 각 outer fold의 train 안 inner k=3 ──
+    combo_scores = {c: [] for c in _XGB_COMBOS}
+    for f in folds:
+        groups = spatial_zone_groups(f.train_idx, aug, k=cv["inner_k_xgb"])
+        for depth, lr in _XGB_COMBOS:
+            aucs = []
+            for i in range(len(groups)):
+                va = groups[i]
+                tr = np.concatenate([groups[j] for j in range(len(groups)) if j != i])
+                p, _ = _fit_predict_xgb(aug, feat_cols, tr, va, va, depth, lr)
+                aucs.append(_inner_prauc(aug["y"].to_numpy()[va], p))
+            combo_scores[(depth, lr)].append(float(np.nanmean(aucs)))
+    sel = {f"d{d}_lr{lr}": round(float(np.nanmean(s)), 4) for (d, lr), s in combo_scores.items()}
+    best = max(_XGB_COMBOS, key=lambda c: np.nanmean(combo_scores[c]))
+
+    # ── c* 고정 → outer fold별 per-fold early stopping(inner k=2의 1그룹=val) ──
+    def predict_fn(train_idx, test_idx):
+        g = spatial_zone_groups(train_idx, aug, k=2)
+        va, tr = g[0], np.concatenate(g[1:]) if len(g) > 1 else (g[0], g[0])
+        p, _ = _fit_predict_xgb(aug, feat_cols, tr, va, test_idx, best[0], best[1])
+        return p
+
+    rep = evaluate(predict_fn, folds, aug, model=model_name)
+    rep["selection"] = {"combos_inner_prauc": sel, "chosen": f"depth={best[0]},lr={best[1]}"}
+    return rep
+
+
+def _inner_prauc(y, p) -> float:
+    from redev.eval.metrics import pr_auc
+    return pr_auc(y, p)
