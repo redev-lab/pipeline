@@ -20,6 +20,7 @@ import yaml  # YAML 파서. safe_load = 임의 파이썬 객체 역직렬화를 
 _CONFIG_DIR = Path(__file__).resolve().parent
 _DISTRICTS_PATH = _CONFIG_DIR / "districts.yaml"
 _THRESHOLDS_PATH = _CONFIG_DIR / "legal_thresholds.yaml"
+_GRAPH_PATH = _CONFIG_DIR / "graph.yaml"
 
 
 def _load_yaml(path: Path) -> dict:
@@ -33,6 +34,12 @@ def _load_yaml(path: Path) -> dict:
     if data is None:
         raise ValueError(f"빈 설정 파일이거나 파싱 실패: {path}")
     return data
+
+
+@lru_cache(maxsize=None)
+def load_graph_config() -> dict:
+    """graph.yaml 파싱 (인접 그래프 구성: 제외지목·버퍼·밀도반경의 단일 출처)."""
+    return _load_yaml(_GRAPH_PATH)
 
 
 @lru_cache(maxsize=None)
