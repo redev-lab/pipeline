@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# 원천 데이터 (라이선스 §11, repo에 커밋 금지)
+_data/
