@@ -4,7 +4,7 @@
 """
 import numpy as np
 
-from redev.models.feasibility import (ENV_SCORE_LABEL, calibrate, reliability,
+from redev.models.feasibility import (ENV_SCORE_LABEL, _rank_phrase, calibrate, reliability,
                                        risk_signal_placeholder, score_feasibility, topk_precision)
 
 
@@ -42,3 +42,20 @@ def test_score_feasibility_naming_honesty():
 def test_risk_placeholder_no_assertion():
     rs = risk_signal_placeholder()
     assert rs["status"] == "v1_미학습" and "R18" in rs["reason"]
+
+
+def test_rank_phrase_top_and_bottom():            # §B-1 표시 표기
+    assert _rank_phrase(8.0) == "상위 8.0%"
+    assert _rank_phrase(50) == "상위 50%"          # 경계 = 상위
+    assert _rank_phrase(77.3) == "하위 22.7%"      # 50 초과 → 하위
+    assert _rank_phrase(100.0) == "하위 0.0%"      # 최하위
+
+
+def test_raw_rank_splits_saturated_scores():      # §B-2 raw 순위는 동률 뭉침 없음
+    # 보정확률이면 상단 포화로 0.993·0.994가 같은 백분위로 뭉쳤다. raw 순위는 갈라져야 한다.
+    ref = np.array([0.1, 0.5, 0.9, 0.993, 0.994, 0.999])
+    a = score_feasibility(0.993, ref, calibrated_prob=0.977)
+    b = score_feasibility(0.994, ref, calibrated_prob=0.977)
+    assert a["rank_top_pct"] != b["rank_top_pct"]              # 동률 뭉침 해소
+    assert a["rank_top_pct"] > b["rank_top_pct"]               # 0.994가 더 상위(작은 값)
+    assert a["calibrated_prob"] == 0.977 and "calibrated_prob" not in a["rank_phrase"]  # 보정확률은 메타

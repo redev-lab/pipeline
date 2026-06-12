@@ -9,7 +9,7 @@ from redev.llm.report import (
 _DATA = {
     "candidate": True, "b1_score": 0.94,
     "stages": {
-        "예언_환경점수": {"status": "ok", "result": {"label": "재개발 환경 점수", "rank_top_pct": 77.3, "caveats": ["환경점수 caveat"]}},
+        "예언_환경점수": {"status": "ok", "result": {"label": "재개발 환경 점수", "rank_top_pct": 77.3, "rank_phrase": "하위 22.7%", "caveats": ["환경점수 caveat"]}},
         "진단_요건": {"status": "ok", "result": {"path": "재개발", "metrics": {"old_area_ratio": 0.94, "abut_ratio": 0.5}}},
         "진단_시세맥락": {"status": "ok", "result": {"land_share_pyung_man": 1658.0, "newbuild_exclu_pyung_man": 5446.0, "caveats": ["시세 caveat"]}},
     },
@@ -19,30 +19,30 @@ _DATA = {
 
 def test_display_facts_preformats_strings():
     f = _display_facts(_DATA)
-    assert f["환경점수"] == "재개발 환경 점수 상위 77.3%"
+    assert f["환경점수"] == "재개발 환경 점수 하위 22.7%"     # §B-1: 77.3%(상위) → 하위 22.7%
     assert f["노후도"] == "노후·불량 연면적 94%"
     assert "1,658만원" in f["시세맥락"] and "5,446만원" in f["시세맥락"]
 
 
 def test_verify_numbers_catches_hallucination():
     f = _display_facts(_DATA)
-    assert verify_numbers("환경 점수 상위 77.3%, 노후도 94%.", f)["ok"]          # 표시값 그대로 → 합격
+    assert verify_numbers("환경 점수 하위 22.7%, 노후도 94%.", f)["ok"]         # 표시값 그대로 → 합격
     bad = verify_numbers("수익률 200% 보장, 9억 상승.", f)                       # 200·9 창작
     assert not bad["ok"] and "200" in bad["unmatched"]
-    assert verify_numbers("### 1. 될까\n상위 77.3%\n### 2. 얼마", f)["ok"]        # ★절 번호 1.2. 면제
+    assert verify_numbers("### 1. 될까\n하위 22.7%\n### 2. 얼마", f)["ok"]       # ★절 번호 1.2. 면제
 
 
 def test_template_report_has_facts_and_caveats():
     f = _display_facts(_DATA)
     cav = ["투자 권유 아님(R15)", "시세 caveat"]
     rep = _template_report(f, cav)
-    assert "재개발 환경 점수 상위 77.3%" in rep and "투자 권유 아님(R15)" in rep
+    assert "재개발 환경 점수 하위 22.7%" in rep and "투자 권유 아님(R15)" in rep
     assert verify_numbers(rep, f, cav)["ok"]                                   # 템플릿은 환각 0 보장(caveat 포함)
 
 
 def test_generate_report_llm_and_fallback():
     # mock LLM: 표시값 그대로 → 환각 0, source llm
-    ok = generate_report(_DATA, complete_fn=lambda s, u: "환경 점수 상위 77.3% [환경점수]")
+    ok = generate_report(_DATA, complete_fn=lambda s, u: "환경 점수 하위 22.7% [환경점수]")
     assert ok["source"] == "llm" and ok["hallucination"]["ok"]
     # LLM 실패 → 템플릿 폴백
     def boom(s, u):
@@ -59,7 +59,7 @@ _NONCAND = {
     "verdict": {"class": "관심 권역(후보 경계 밖)",
                 "headline": "환경 점수 상위 8.0%이나 후보 군집 미포함 — 현 시점 관망 권역. 단정 아님."},
     "stages": {
-        "예언_환경점수": {"status": "ok", "result": {"label": "재개발 환경 점수", "rank_top_pct": 8.0, "caveats": []}},
+        "예언_환경점수": {"status": "ok", "result": {"label": "재개발 환경 점수", "rank_top_pct": 8.0, "rank_phrase": "상위 8.0%", "caveats": []}},
         "진단_요건": {"status": "na", "reason": "후보 군집 미형성 — 단일 필지로 요건 판정 불가"},
         "진입_eligibility": {"status": "ok", "result": {
             "진단_토허": {"toheo_applies": True, "gap_investment_possible": False},
@@ -84,16 +84,25 @@ def test_noncandidate_contradiction_explained():  # 결함 1
 
 def test_low_score_noncandidate_no_contradiction_note():  # 결함 1 경계 — 모순 없을 땐 미부착
     low = {**_NONCAND, "stages": {**_NONCAND["stages"],
-           "예언_환경점수": {"status": "ok", "result": {"label": "재개발 환경 점수", "rank_top_pct": 100.0}}}}
+           "예언_환경점수": {"status": "ok", "result": {"label": "재개발 환경 점수", "rank_top_pct": 100.0, "rank_phrase": "하위 0.0%"}}}}
     f = _display_facts(low)
     assert "후보판정설명" not in f                  # 점수 낮음 → '대상 아님'이 설명, 모순 문장 없음
-    assert f["환경점수"].startswith("재개발 환경 점수 상위")   # 그래도 환경점수는 채움(결함2)
+    assert f["환경점수"] == "재개발 환경 점수 하위 0.0%"      # §B-1: 상위 100% → 하위 0.0%(결함2 채움 유지)
 
 
 def test_stage_not_leaked_for_noncandidate():     # 결함 3
     f = _display_facts(_NONCAND)
     assert "잔여기간" not in f                      # 기간·단계 누수 없음
     assert "단계상태" in f and "구역 아님" in f["단계상태"]
+
+
+def test_similar_case_uses_display_name_not_raw_code():  # §B-3
+    d = {**_DATA, "retrieval": {"matches": [
+        {"zone_id": "11590NTC202409250002", "display_name": "동작구 노량진동 일대 (2009)",
+         "similarity": 0.91, "t": 2009}]}}
+    f = _display_facts(d)
+    assert "동작구 노량진동 일대 (2009)" in f["유사사례"]
+    assert "11590NTC" not in f["유사사례"]          # 원시코드 노출 안 함
 
 
 def test_user_caveats_strip_internal_codes():     # 결함 4

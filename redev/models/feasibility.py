@@ -65,17 +65,29 @@ def risk_signal_placeholder() -> dict:
     }
 
 
-def score_feasibility(calibrated_prob: float, reference_probs: np.ndarray) -> dict:
-    """공개 진입점 — 보정확률 → ★'재개발 환경 점수' 랭킹 + 리스크 자리표시 + 명칭 정직성.
+def _rank_phrase(p: float) -> str:
+    """★백분위 표기(계약 §B-1) — p=상위 몇 %(낮을수록 상위). p≤50 '상위 p%', p>50 '하위 (100−p)%'.
+    '상위 100%'(최하위) 같은 혼란을 없앤다. 표시 계층 함수(숫자 자체는 안 바꿈, 문구만)."""
+    return f"상위 {p}%" if p <= 50 else f"하위 {round(100 - p, 1)}%"
 
-    rank_top_pct: 참조분포에서 상위 몇 %인가. "추진 가능성"이 아니라 "환경 점수"임을 메타에 명시.
+
+def score_feasibility(raw_score: float, raw_reference: np.ndarray, *,
+                      calibrated_prob: float | None = None) -> dict:
+    """공개 진입점 — ★'재개발 환경 점수' 랭킹 + 리스크 자리표시 + 명칭 정직성.
+
+    ★백분위(계약 §B-2)는 *raw 점수의 전 노드 순위*로 계산한다 — 보정확률은 상단이 포화돼
+    서로 다른 raw(0.993·0.994)가 같은 백분위로 뭉친다. raw 순위는 단조라 동률 뭉침이 사라진다.
+    보정확률(calibrated_prob)은 내부 메타로만 보존(표시 안 함). rank_top_pct = 상위 몇 %(낮을수록 상위).
     """
-    ref = np.asarray(reference_probs)
-    better_than = float((ref < calibrated_prob).mean())
+    ref = np.asarray(raw_reference)
+    better_than = float((ref < raw_score).mean())
+    rank_top_pct = round(100.0 * (1 - better_than), 1)
     return {
         "label": ENV_SCORE_LABEL,                         # ★'추진 가능성' 아님
-        "calibrated_prob": round(float(calibrated_prob), 3),
-        "rank_top_pct": round(100.0 * (1 - better_than), 1),
+        "rank_top_pct": rank_top_pct,
+        "rank_phrase": _rank_phrase(rank_top_pct),        # ★표시 문구(상위/하위)
+        "raw_score": round(float(raw_score), 4),
+        "calibrated_prob": round(float(calibrated_prob), 3) if calibrated_prob is not None else None,  # 메타
         "risk_signals": risk_signal_placeholder(),
         "caveats": [
             "이 점수는 '재개발 환경 유사도'이지 '추진 성공 가능성'이 아니다 — 선정·추진은 "

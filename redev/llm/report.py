@@ -29,10 +29,10 @@ def _display_facts(data: dict) -> dict:
     if data.get("b1_score") is not None:
         f["환경유사도점수"] = f"{data['b1_score']}"
 
-    # ② 환경점수 — 항상 채움
+    # ② 환경점수 — 항상 채움. 표기는 rank_phrase(상위/하위, §B-1).
     fe = (st.get("예언_환경점수", {}) or {}).get("result")
     if fe:
-        f["환경점수"] = f"{fe['label']} 상위 {fe['rank_top_pct']}%"
+        f["환경점수"] = f"{fe['label']} {fe['rank_phrase']}"
     else:
         f["환경점수"] = "산출 불가(그래프 노드 외 — 점수 미산출)"
     # ① 모순 해소 — ★점수는 높은데(상위 N% 이내) 후보 아님일 때만: 두 사실의 관계를 한 문장으로.
@@ -41,7 +41,7 @@ def _display_facts(data: dict) -> dict:
         from redev.config import load_infer_config
         cfg = load_infer_config()["cluster"]
         if fe["rank_top_pct"] <= cfg["tight_top_pct"]:
-            f["후보판정설명"] = (f"환경 점수는 상위 {fe['rank_top_pct']}%이나 "
+            f["후보판정설명"] = (f"환경 점수는 {fe['rank_phrase']}이나 "
                               f"연결 군집 기준(최소 {cfg['min_nodes']}필지) 미달로 후보 경계엔 미포함")
 
     # ② 요건판정 — 항상 채움(클러스터 없으면 사유)
@@ -73,7 +73,8 @@ def _display_facts(data: dict) -> dict:
     cases = data.get("retrieval", {}).get("matches", [])
     if cases:
         c = cases[0]
-        f["유사사례"] = f"{c['zone_id']} {int(round(c['similarity']*100))}% 유사({c.get('t')} 지정)"
+        name = c.get("display_name") or c.get("zone_id")   # §B-3: 표시명 우선, 원시코드는 폴백·메타
+        f["유사사례"] = f"{name} {int(round(c['similarity']*100))}% 유사"
     soc = data.get("social", {})
     f["사회신호"] = soc.get("status", "신호 없음")
     if v.get("class"):

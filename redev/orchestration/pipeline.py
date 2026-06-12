@@ -129,7 +129,7 @@ def _verdict(out: dict) -> dict:
     from redev.config import load_infer_config
     fe = (out["stages"].get("예언_환경점수", {}) or {}).get("result") or {}
     pct = fe.get("rank_top_pct")
-    pct_s = f"상위 {pct}%" if pct is not None else "환경 점수 산출 불가"
+    pct_s = fe.get("rank_phrase") or "환경 점수 산출 불가"     # ★표시 문구(상위/하위, §B-1)와 일치
     if out.get("candidate"):
         path = ((out["stages"].get("진단_요건", {}) or {}).get("result") or {}).get("path")
         cls = f"후보 — {path} 경로" if path else "후보 군집(요건 판정 보류)"
@@ -169,10 +169,11 @@ def run(address: str, ctx: Context, *, property_type: str | None = None, stage: 
     candidate = not (idx is None or ctx.scores[idx] < ctx.thr or cluster is None)
     out["candidate"] = candidate
 
-    # ⑥ 환경 점수 — ★candidate 무관 항상 산출(calibrated는 전 노드 산출, 계약 v1.1 §11-2: "—" 금지)
+    # ⑥ 환경 점수 — ★candidate 무관 항상 산출. 백분위는 raw 점수 순위(§B-2), 보정확률은 메타로 전달.
     if idx is not None:
         out["stages"]["예언_환경점수"] = _stage(
-            score_feasibility, float(ctx.calibrated[idx]), ctx.calibrated)
+            score_feasibility, float(ctx.scores[idx]), ctx.scores,
+            calibrated_prob=float(ctx.calibrated[idx]))
     else:
         out["stages"]["예언_환경점수"] = {"status": "na", "reason": "그래프 노드 외 — 환경 점수 산출 불가"}
 

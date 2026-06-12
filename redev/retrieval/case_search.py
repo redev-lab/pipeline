@@ -21,13 +21,28 @@ _FEATURES = [("old_area_ratio", "노후도"), ("area_ha", "면적"),
 @dataclass
 class ZoneVectors:
     Z: np.ndarray          # [n_zones, 4] L2-정규화된 표준화 벡터
-    meta: list             # [{zone_id, t, zone_type, completed}]
+    meta: list             # [{zone_id, display_name, t, zone_type, completed}]
     mean: np.ndarray       # 표준화 통계(쿼리도 동일 적용)
     std: np.ndarray
 
 
 def _raw_vec(m: dict) -> np.ndarray:
     return np.array([m.get(k, np.nan) for k, _ in _FEATURES], dtype=float)
+
+
+def _zone_display_name(pnus, pnu2dong: dict, t) -> str | None:
+    """★구역 표시명(§B-3) — 원시 zone_id(11590NTC…) 대신 사용자 표기. 구역의 최빈 법정동주소
+    ('서울특별시 동작구 노량진동')에서 '서울특별시' 접두를 떼고 '자치구 동 일대 (지정연도)'로.
+    zone_id 원시코드는 메타에만 남긴다(노출 안 함)."""
+    from collections import Counter
+    addrs = [pnu2dong.get(p) for p in pnus]
+    addrs = [a.strip() for a in addrs if isinstance(a, str) and a.strip()]
+    if not addrs:
+        return None
+    top = Counter(addrs).most_common(1)[0][0]
+    parts = top.split()
+    label = " ".join(parts[1:]) if parts and parts[0].startswith("서울") else top  # '서울특별시' 접두 제거
+    return f"{label} 일대 ({t})" if t else f"{label} 일대"
 
 
 def build_zone_vectors(zones: list, parcels, buildings, *, cfg=None) -> ZoneVectors:
@@ -37,12 +52,15 @@ def build_zone_vectors(zones: list, parcels, buildings, *, cfg=None) -> ZoneVect
     """
     th = cfg or load_thresholds()
     cut = th["label_hygiene"]["min_old_ratio_for_positive"]
+    pnu2dong = dict(zip(parcels["pnu"], parcels["dong_addr"]))     # §B-3 표시명용
     raws, meta = [], []
     for z in zones:
         m = cluster_metrics(z["pnus"], parcels, buildings, cfg=th)
         raws.append(_raw_vec(m))
         oa = m["old_area_ratio"]
-        meta.append({"zone_id": z["zone_id"], "t": z.get("t"), "zone_type": z.get("zone_type"),
+        meta.append({"zone_id": z["zone_id"],
+                     "display_name": _zone_display_name(z["pnus"], pnu2dong, z.get("t")),
+                     "t": z.get("t"), "zone_type": z.get("zone_type"),
                      "completed": bool(oa is not None and not np.isnan(oa) and oa < cut)})
     raw = np.vstack(raws)
     mean = np.nanmean(raw, axis=0)
