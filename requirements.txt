@@ -18,6 +18,9 @@ scikit-learn>=1.5    # PR-AUC·KMeans(공간 inner)·precision_recall_curve (eva
 scipy>=1.13          # cKDTree(기하버퍼·최근접 zone 배정)
 xgboost>=3.2         # B1/B1+ 대조군(CPU hist). R9 — GNN과 동일 v1 피처
 
+# Phase 7 (LLM 종합): Gemini 사회신호·리포트.
+google-genai>=1.0    # Gemini 신 통합 SDK. 모델은 config(gemini-2.5-flash 핀). 키 .env
+
 # 테스트
 pytest>=8.0          # 회귀 테스트(tests/) — t-전쟁 함정 6개 고정
 
