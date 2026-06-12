@@ -41,9 +41,9 @@ def train_production_b1(aug_labeled, *, params=PROD_B1_PARAMS):
     검증(LODO)은 Phase 3에서 끝 — 여기선 배포 모델을 전 데이터로 적합(재튜닝 아님).
     """
     from redev.eval.spatial_cv import spatial_zone_groups
-    from redev.models.baseline import _make_xgb, _spw, feature_sets
+    from redev.models.baseline import _make_xgb, _spw, production_feature_set
 
-    fc = feature_sets(aug_labeled)["B1"]
+    fc = production_feature_set(aug_labeled)        # ★B1+ −용도지역(측정: 누수 제외, baseline 주석)
     g = spatial_zone_groups(np.arange(len(aug_labeled)), aug_labeled, k=2)
     va = g[0]
     tr = np.concatenate(g[1:]) if len(g) > 1 else g[0]
