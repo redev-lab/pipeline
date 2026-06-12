@@ -31,6 +31,7 @@ class Context:
     agg_level: pd.Series          # pnu → 신뢰도 단계
     comp: pd.Series               # pnu → 비교신축 전용 평당가
     name2code: dict               # 구명 → 시군구코드
+    zone_vectors: object = None   # 사례검색용 51구역 벡터(retrieval)
 
 
 def build_context() -> Context:
@@ -66,9 +67,25 @@ def build_context() -> Context:
     tgt = build_target(parcels, trades, current_ym="202606").set_index("pnu")
     comp = comparable_newbuild(parcels, trades).set_index("pnu")["comp_pyung"]
     name2code = {d["name"]: d["sigungu_code"] for d in training_districts()}
+
+    # 사례검색용 51구역 벡터(retrieval) — ⑨ 리포트에서 "유사 구역"
+    from redev.data.ingest.zone_boundary import load_zones
+    from redev.data.labels import _positives_from_zonetable
+    from redev.models.baseline import _RAW, _SRC, _vsizip
+    from redev.retrieval.case_search import build_zone_vectors
+    codes = sorted(name2code.values())
+    zt, _ = load_zones(_vsizip(*_SRC["uq"]), str(_RAW / _SRC["gosi"]), parcels, codes,
+                       jeonbisaeop_csv=str(_RAW / _SRC["jeonbisaeop"]),
+                       shintong_csv=str(_RAW / _SRC["shintong"]),
+                       public_redev_csv=str(_RAW / _SRC["public_redev"]))
+    pos = _positives_from_zonetable(zt, parcels)
+    ztype = zt.set_index("zone_id")["zone_type"].to_dict()
+    zlist = [{"zone_id": z, "pnus": set(g["pnu"]), "t": int(g["t"].iloc[0]), "zone_type": ztype.get(z)}
+             for z, g in pos.groupby("zone_id")]
+    zv = build_zone_vectors(zlist, parcels, buildings)
     return Context(parcels, buildings, tm.pnu_to_idx, tm.edge_index, build_jibun_index(parcels),
                    scores, calibrated, pnu_cluster, float(thr),
-                   tgt["target_pyung"], tgt["agg_level"], comp, name2code)
+                   tgt["target_pyung"], tgt["agg_level"], comp, name2code, zv)
 
 
 def address_to_pnu(address: str, ctx: Context) -> str:
@@ -102,8 +119,9 @@ def _stage(fn, *a, **k):
         return {"status": "error", "reason": f"{type(e).__name__}: {e}"}
 
 
-def run(address: str, ctx: Context, *, property_type: str | None = None, stage: str | None = None) -> dict:
-    """주소 → 종합 판단(진단/예언 분리 + caveats). §8 직선 + 저신뢰 폴백 if + ⑨ 자리."""
+def run(address: str, ctx: Context, *, property_type: str | None = None, stage: str | None = None,
+        with_report: bool = False) -> dict:
+    """주소 → 종합 판단(진단/예언 분리 + caveats). §8 직선 + 저신뢰 폴백 if + ⑨ 리포트(opt-in)."""
     from redev.models.avm import market_context
     from redev.models.feasibility import score_feasibility
     from redev.rules.eligibility import score_eligibility
@@ -148,11 +166,22 @@ def run(address: str, ctx: Context, *, property_type: str | None = None, stage: 
         out["stages"]["진입_eligibility"] = _stage(
             score_eligibility, property_type, stage or "조합설립인가")
 
-    # ⑨ LLM 종합·설명 — ★Phase 7 자리(placeholder). v1은 구조화 dict.
-    out["llm_summary"] = {"status": "v1_placeholder", "note": "종합·설명 LLM은 Phase 7."}
     out["caveats"] = [
         "v1 후보경계는 거친 필터(코어 ~39% 포착) — 정밀 경계 아님(R13).",
         "B1 점수는 '재개발 환경 유사도'(노후도 주도), 지정·추진과 강하게 정렬되진 않음(R4·R18).",
         "모든 수치 추정·참고치이며 투자 권유 아님(R15).",
     ]
+
+    # ⑨ 종합 리포트 — ★opt-in(LLM 호출, 한도·속도). retrieval(유사구역)+social(사회신호)+report.
+    if with_report:
+        from redev.llm.report import generate_report
+        from redev.nlp.layer3 import social_signals
+        from redev.retrieval.case_search import search_cases
+        if cluster and ctx.zone_vectors is not None:
+            out["retrieval"] = _stage(search_cases, cluster, ctx.parcels, ctx.buildings, ctx.zone_vectors).get("result")
+        matches = (out.get("retrieval") or {}).get("matches") or []
+        out["social"] = social_signals(matches[0]["zone_id"] if matches else None)   # 데모: 대개 신호 없음
+        out["report"] = generate_report(out)
+    else:
+        out["llm_summary"] = {"status": "opt_in", "note": "with_report=True로 ⑨ 리포트 생성."}
     return out

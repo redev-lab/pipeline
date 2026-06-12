@@ -1,6 +1,18 @@
 # 인수인계 (다음 세션)
 
-## ★현재 상태 (2026-06-12): Phase 0~6 완료
+## ★현재 상태 (2026-06-12): Phase 0~7 완료 — v1 파이프라인 등뼈+LLM 완성
+- **Phase 7 = LLM 종합 완료** (`phase-7-llm`): ① retrieval(numpy 코사인, t제외)·② nlp/layer3
+  (Gemini 사회신호, 무신호=정상)·③ llm/report(⑨ 5종 판단, ★환각 0 검증)·run(with_report=True) 연결.
+  ★숫자 포맷 LLM에 안 맡기고 사전포맷 verbatim → verify_numbers 정확대조. 환각 3주소 0·CPU 13s/주소.
+  client=Gemini 한 겹(백오프 재시도+폴백). 모델 config 핀(gemini-2.5-flash, 2.0-flash 무료폐지).
+- **★주소 한 줄 → 5종 판단 한국어 리포트**가 돈다(82 테스트 green).
+- **다음 = Phase 8**: 데모 3종(광흥창·역삼)용 마포(11440)·강남(11680) 추론용 구 ingest +
+  stage1 역삼 negative 데모. v1.1: PU학습·가치/입지 피처(공시지가 26년·역사·용도지역 입고됨)·
+  hard-neg k-hop·뉴스 크롤·pgvector(전역).
+
+---
+
+## (이전) Phase 0~6 완료
 - **Phase 6 = 파이프라인 등뼈 완료** (`phase-6-infer`): infer(전 노드 히트맵+후보 클러스터)·
   B0/IoU(R13)·`orchestration/pipeline.py run(address)` 7단계 직선. CPU 68ms/주소. 전체 74 테스트 green.
 - **데이터병목 3호 실증**: infer 81% 과대예측(R4 PU갭). IoU B1넓은 0.294>B0 0.129>타이트 0.019.

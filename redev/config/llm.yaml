@@ -1,0 +1,13 @@
+# llm.yaml — LLM(Gemini) 설정 (규칙5). 설계: nlp_layer3.md §1.
+
+llm:
+  # ★gemini-2.5-flash 핀 버전 (2026-06 확정). 근거:
+  #   ① 핀 버전 — 별칭(gemini-flash-latest) 금지. 별칭은 모델이 몰래 바뀌어 temperature=0
+  #      결정론 + ③ 환각 diff 수검의 재현성을 깬다.
+  #   ② 우리 용도(JSON→한국어 언어화)는 난이도가 낮아 최신 최강이 불필요 — 안정성 > 성능.
+  #   ③ ★gemini-2.0-flash는 무료티어 폐지(limit:0, 2026-06 실호출 확인) → 그래서 2.5.
+  #   더 강한 게 필요해지면 교체 후보: gemini-3.5-flash (2026 최신, 무료티어 동작 확인).
+  model: gemini-2.5-flash
+  temperature: 0.0      # 결정론 지향(환각·변동 ↓ — 같은 입력 같은 출력에 가깝게)
+  max_retries: 4        # rate limit(429)·일시오류 지수 백오프 재시도(무료 분당 한도 대비 — 실증됨)
+  base_backoff_s: 2     # 백오프 기준(2·4·8·16s). 서버 retryDelay 있으면 그걸 우선.
