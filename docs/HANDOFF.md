@@ -1,5 +1,16 @@
 # 인수인계 (다음 세션)
 
+## ★v1.2 PU 학습 — 측정으로 기각 (2026-06-13, 타임박스 1세션 종료)
+- uncertain(5.6만) PU 학습(P1 저가중·P2 spy)로 infer 81% 과대예측 겨냥. 신규 데이터 0원.
+- ★결과: 과대예측 81%→37~44% 하락하나 ★known positive recall −11~26%p 붕괴(가드 3%p 초과)·IoU
+  0.300→0.15~0.22 악화 → ①③ 불합격, **production 교체 안 함**(채택 규칙대로).
+- ★§0 함정 실현: 피처로 old-지정/미지정 변별 불가(R18 외생) → uncertain 누르면 positive 동반 희생.
+- ★결정적 확증: infer 과대예측=라벨/외생 병목, PU(재가중)로 못 푼다. **진짜 답=라벨 확장(v2,
+  R7-① 전역 positive 확대).** 모델 사이클 종료 — 다음 = **Phase 8 데모 3종(마포·강남 ingest)** 또는 v2.
+- 코드 보존: `models/pu.py`(load_pu_matrix·pu_weights·run_pu_lodo·spy_promote) — v2 라벨 확장 후 재시도 가능.
+
+
+
 ## ★v1.1 피처 사이클 완료 (2026-06-12) — 병목 해부
 - ingest 3종(공시지가 as-of-t·용도지역·역세권 as-of-t) + features 5→10 + 같은 LODO 재경기.
 - ★결과: B1+ 격전지 0.622→0.683·AVM 격차 절반(피처 병목 완화) / GNN 0.929→0.913 악화·infer 81%
