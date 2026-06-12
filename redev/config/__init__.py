@@ -22,6 +22,7 @@ _DISTRICTS_PATH = _CONFIG_DIR / "districts.yaml"
 _THRESHOLDS_PATH = _CONFIG_DIR / "legal_thresholds.yaml"
 _GRAPH_PATH = _CONFIG_DIR / "graph.yaml"
 _AVM_PATH = _CONFIG_DIR / "avm.yaml"
+_ELIG_PATH = _CONFIG_DIR / "eligibility.yaml"
 
 
 def _load_yaml(path: Path) -> dict:
@@ -47,6 +48,12 @@ def load_graph_config() -> dict:
 def load_avm_config() -> dict:
     """avm.yaml 파싱 (심장2 AVM: 반경집계·비교신축·상승여력 시나리오의 단일 출처)."""
     return _load_yaml(_AVM_PATH)
+
+
+@lru_cache(maxsize=None)
+def load_eligibility_config() -> dict:
+    """eligibility.yaml 파싱 (진입: 토허 분기·단계 잔여기간의 단일 출처. ★수시변경 규제)."""
+    return _load_yaml(_ELIG_PATH)
 
 
 @lru_cache(maxsize=None)
