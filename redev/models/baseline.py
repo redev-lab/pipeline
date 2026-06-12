@@ -406,3 +406,29 @@ def run_xgb_cv(aug, feat_cols, edge_index, pnu_to_idx, *, model_name: str, cfg=N
 def _inner_prauc(y, p) -> float:
     from redev.eval.metrics import pr_auc
     return pr_auc(y, p)
+
+
+def region_grow(aging: np.ndarray, edge_index, pnu_to_idx, *, seed_cut, grow_cut, min_nodes=5) -> list:
+    """B0 — 무학습 공간 바닥선(연기됐던 것, baseline.md). 노후 seed→인접 노후 필지 확장.
+
+    노후도≥grow_cut 노드의 그래프 연결요소 중 seed(노후도≥seed_cut)를 품은 것 = 후보(BFS 확장과
+    동치). R13 IoU 비교의 좌표축 — 학습 없이 공간 인접성만으로 어디까지 가나. 반환: PNU 집합 목록.
+    """
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+    n = len(aging)
+    idx_to_pnu = np.empty(n, dtype=object)
+    for p, i in pnu_to_idx.items():
+        idx_to_pnu[i] = p
+    grow = aging >= grow_cut
+    src, dst = np.asarray(edge_index[0]), np.asarray(edge_index[1])
+    keep = grow[src] & grow[dst]
+    g = coo_matrix((np.ones(keep.sum()), (src[keep], dst[keep])), shape=(n, n))
+    _, comp = connected_components(g, directed=False)
+    seed = aging >= seed_cut
+    clusters = []
+    for c in np.unique(comp[grow]):
+        members = np.where((comp == c) & grow)[0]
+        if len(members) >= min_nodes and seed[members].any():
+            clusters.append(set(idx_to_pnu[members].tolist()))
+    return clusters

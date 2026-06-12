@@ -1,5 +1,17 @@
 # 인수인계 (다음 세션)
 
+## ★현재 상태 (2026-06-12): Phase 0~6 완료
+- **Phase 6 = 파이프라인 등뼈 완료** (`phase-6-infer`): infer(전 노드 히트맵+후보 클러스터)·
+  B0/IoU(R13)·`orchestration/pipeline.py run(address)` 7단계 직선. CPU 68ms/주소. 전체 74 테스트 green.
+- **데이터병목 3호 실증**: infer 81% 과대예측(R4 PU갭). IoU B1넓은 0.294>B0 0.129>타이트 0.019.
+  릴레이 IoU(B1→stage1)=0.294 동일(stage1도 노후도 축, 무이득). 심장1·심장2·infer 모두 같은 결.
+- **★Phase 번호 = 기획서와 다름**(순서 변경): 조립(infer+orchestration)을 사례검색·NLP보다 먼저
+  세웠다(등뼈 우선). → **사례검색(retrieval) + Layer3(NLP 사회신호) + LLM ⑨(종합·설명) = Phase 7**로
+  밀림. run()에 ⑨ LLM 자리는 placeholder로 파둠.
+- **다음 = Phase 7**: retrieval(pgvector 사례검색) + nlp/layer3(추론시점 사회신호) + LLM ⑨(run에 연결).
+
+---
+
 **Phase 3 완료** — `phase-3-models` 브랜치. 심장1 노드 분류 + R9 통제비교 마무리.
 
 ## ★Phase 3 최종 판정 (R9)
