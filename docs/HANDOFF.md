@@ -6,7 +6,15 @@
 - 통합 점수표(LODO pooled): B-2 0.640 / B1 0.932 / B1+ **0.934** / GNN 0.929 / GNN+pretrain 0.928.
 - **GNN은 천장(B1+) 못 넘고 미세 열세** — zone-block bootstrap Δ +0.006, CI [+0.002,+0.012](0 불포함).
   사전학습 리프트 ≈0. → **데이터 병목(R9), v1 추론모델 = B1.** GNN 보존(README v2 조건).
-- 다음 = **Phase 4 (Stage1 룰셋, `rules/stage1.py`)** — 학습 아니라 결정론 루브릭(claude_code_phases.md).
+
+## Phase 4 완료 (Stage1 룰셋, `rules/stage1.py`)
+- 클러스터(PNU집합)→요건 점수+경로(재개발/모아타운/해당없음). 결정론·config·caveat 동봉.
+- 수검(지정구역 51 역검증): 본진 UQ1221 47개 재개발 57%. 해당없음 14=완공(노후0/NaN, 정상),
+  모아타운 6=노후0.6~0.96인데 접도율(폭무관)·호밀(동단위) 한계로 광역미달(측정으로 caveat 확인).
+- 다음 = **Phase 5 (심장2 AVM, `models/avm.py`)** 또는 **infer/orchestration**(B1 점수→클러스터
+  →stage1 연결). claude_code_phases.md 참조.
+- ★메모: Phase 8 데모 3종(광흥창·역삼)이 마포(11440)·강남(11680) 추론용 구 ingest 요구 →
+  그 시점에 stage1 역삼 negative 데모·infer 클러스터 조립도 함께.
 
 ## 완료 (커밋)
 
