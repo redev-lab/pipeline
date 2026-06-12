@@ -19,8 +19,28 @@ from shapely import STRtree
 from redev.config import load_graph_config
 from redev.data.aging import old_ratio_by_parcel
 
-# v1 피처 컬럼(graph.md §3). 데이터 의존(용도지역·공시지가·역거리·배제)은 v1.1.
-FEATURE_COLUMNS = ["aging", "area_m2", "compactness", "bldg_density", "road_abut"]
+# 피처 컬럼. v1=앞 5개(노후·면적·형상·호밀·접도). ★v1.1=뒤 5개 직교 축(공시지가 백분위·
+# 결측·용도지역 ordinal·결측·역세권 근접). 신규 피처 시점정합: land_pct·rail_prox=as-of-t,
+# zoning=2026 스냅샷(§13 한계). features_v1_1.md.
+FEATURE_COLUMNS = ["aging", "area_m2", "compactness", "bldg_density", "road_abut",
+                   "land_pct", "land_missing", "zoning_ord", "zoning_missing", "rail_prox"]
+V1_FEATURES = FEATURE_COLUMNS[:5]      # v1(노후도 축) — 재경기 신구 비교·ablation 기준
+V11_FEATURES = FEATURE_COLUMNS[5:]     # v1.1 직교 축
+
+# 정적 v1.1(용도지역·필지 centroid)은 parcels당 1회 계산·메모(이웃집계가 t-그룹당 반복 호출).
+_V11_MEMO: dict = {}
+
+
+def _v11_static(parcels):
+    """parcels당 정적 v1.1 캐시: 용도지역 ord/missing(pnu→), 필지 centroid(역거리용)."""
+    k = id(parcels)
+    if k not in _V11_MEMO:
+        from redev.data.ingest.zoning import zoning_features
+        zf = zoning_features(parcels).set_index("pnu")
+        _V11_MEMO.clear()                                  # 메모리 누수 방지(1개만 유지)
+        _V11_MEMO[k] = {"zoning_ord": zf["zoning_ord"], "zoning_missing": zf["zoning_missing"],
+                        "centroid": parcels.set_index("pnu").geometry.centroid}
+    return _V11_MEMO[k]
 
 
 def _buildings_as_of(buildings: pd.DataFrame, t: int) -> pd.DataFrame:
@@ -95,4 +115,16 @@ def node_features(
         mask = rows["t"] == t
         rows.loc[mask, "aging"] = rows.loc[mask, "pnu"].map(ratio).fillna(0.0).values
         rows.loc[mask, "bldg_density"] = rows.loc[mask, "pnu"].map(density).fillna(0.0).values
+
+    # ── ★v1.1 직교 축: 공시지가(as-of-t 백분위)·용도지역(정적)·역세권(as-of-t) ──
+    from redev.data.ingest.land_price import land_price_features
+    from redev.data.ingest.rail import rail_features
+    v11 = _v11_static(parcels)
+    rows["zoning_ord"] = rows["pnu"].map(v11["zoning_ord"]).fillna(0.0).values
+    rows["zoning_missing"] = rows["pnu"].map(v11["zoning_missing"]).fillna(1.0).values
+    land = land_price_features(rows)                                # as-of-t 백분위(+결측 플래그)
+    rows["land_pct"] = land["land_pct"].values
+    rows["land_missing"] = land["land_missing"].values
+    rail = rail_features(rows, parcels, centroids=v11["centroid"])  # as-of-t 최근접 역 근접도
+    rows["rail_prox"] = rail["rail_prox"].values
     return rows[["pnu", "t"] + FEATURE_COLUMNS]

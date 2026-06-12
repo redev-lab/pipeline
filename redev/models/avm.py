@@ -82,8 +82,9 @@ def build_target(parcels, trades, *, current_ym: str, cfg=None) -> pd.DataFrame:
                          "agg_level": level, "n_trades": ntr})
 
 
-# AVM 피처(v1 가용분 — 역세권·용도지역은 v1.1, avm.md §4). agg_ord·n_trades=R16 신뢰도 인지.
-AVM_FEATURES = ["area_m2", "compactness", "road_abut", "aging", "n_trades", "agg_ord"]
+# AVM 피처. v1=앞 6 + ★v1.1 가치/입지 축(공시지가 백분위·용도지역·역세권). agg_ord·n_trades=R16.
+AVM_FEATURES = ["area_m2", "compactness", "road_abut", "aging", "n_trades", "agg_ord",
+                "land_pct", "zoning_ord", "rail_prox"]
 _AGG_ORD = {"r50": 0, "r100": 1, "dong": 2, "missing": 3}
 
 
@@ -101,6 +102,15 @@ def avm_features(parcels, buildings, target_df, *, current_year: int = 2026) -> 
     feat["aging"] = feat.index.map(aging).fillna(0.0)
     out = target_df.merge(feat, left_on="pnu", right_index=True, how="left")
     out["agg_ord"] = out["agg_level"].map(_AGG_ORD)
+    # ★v1.1 가치/입지 축: 공시지가 백분위·용도지역 ordinal·역세권 근접(현재시점).
+    from redev.data.ingest.land_price import land_price_features
+    from redev.data.ingest.rail import rail_features
+    from redev.data.ingest.zoning import zoning_features
+    rows = pd.DataFrame({"pnu": out["pnu"].values, "t": current_year})
+    out["land_pct"] = land_price_features(rows, current_year=current_year)["land_pct"].values
+    zf = zoning_features(parcels).set_index("pnu")["zoning_ord"]
+    out["zoning_ord"] = out["pnu"].map(zf).fillna(0.0).values
+    out["rail_prox"] = rail_features(rows, parcels, current_year=current_year)["rail_prox"].values
     return out
 
 

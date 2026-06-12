@@ -35,14 +35,16 @@ def load_stations() -> pd.DataFrame:
     return df[["name", "line", "x", "y", "open_year", "open_source"]]
 
 
-def rail_features(label_rows: pd.DataFrame, parcels, *, current_year: int = 2026, cfg=None) -> pd.DataFrame:
+def rail_features(label_rows: pd.DataFrame, parcels, *, current_year: int = 2026, cfg=None,
+                  centroids=None) -> pd.DataFrame:
     """(pnu, t) → as-of-t 최근접 역 거리(m) + 정규화 + 최근접역 출처. 행 순서=label_rows.
 
     학습: t에 개통한 노선 역만 최근접. 추론: current_year. ★누수 차단(2010 라벨이 2017 우이신설 못 봄).
+    centroids: 사전계산된 pnu→centroid(Series) 주입 시 재계산 회피(이웃집계 반복 호출 최적화).
     """
     rail = (cfg or load_features_config())["rail"]
     st = load_stations()
-    cent = parcels.set_index("pnu").geometry.centroid
+    cent = centroids if centroids is not None else parcels.set_index("pnu").geometry.centroid
     rows = label_rows[["pnu", "t"]].reset_index(drop=True)
     cx = rows["pnu"].map(cent.x).to_numpy()
     cy = rows["pnu"].map(cent.y).to_numpy()

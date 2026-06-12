@@ -38,6 +38,7 @@ def test_closure_two_hops():
 
 
 def test_nb_columns_shape():
+    from redev.graph.features import FEATURE_COLUMNS
     cols = _nb_columns(2)
-    assert len(cols) == 2 * 2 * 5                   # 2홉 × (mean,max) × 5피처
+    assert len(cols) == 2 * 2 * len(FEATURE_COLUMNS)   # 2홉 × (mean,max) × 피처수(v1.1=10)
     assert cols[0].startswith("nb1_mean_") and cols[-1].startswith("nb2_max_")
