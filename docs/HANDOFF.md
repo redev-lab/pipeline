@@ -45,6 +45,10 @@
   · `graph_edge_index.npy`·`graph_pnu_idx.parquet`(전역 141K 노드). 재빌드 `force_rebuild=True`.
 
 ## v1.1 백로그
+- ★**v1.1 데이터 3종 입고·검수완료(2026-06-12), 투입 대기** — `_data/raw/추가데이터/`,
+  DATA_SOURCES.md 참조. 공시지가(AL_D151, 4구 17만필지)·역사마스터(784역 WGS84)·용도지역
+  (AL_D124, 4구 1097폴리곤 EPSG:5186 세분류). 이게 두 심장 데이터병목(R9)을 푸는 v2 가치/입지
+  피처. ⚠️**공시지가 2026 단일연도 → 시점분리 학습엔 과거연도 추가 입수 필요**(현재가치만이면 OK).
 - hard-neg(해제) k-hop 확장 **1순위**(labels §13: 24노드뿐→"요건됐는데 무산" 학습불가).
-- uncertain PU 정식처리 · 데이터대기 피처(용도지역·공시지가·역거리·배제) · forest size-hub guard
-  · buildings 4구 선필터(조립 100s↓) · 잔여 보류 3구역 회수.
+- uncertain PU 정식처리 · 역사마스터 5186 reproject · forest size-hub guard
+  · buildings 4구 선필터(조립 100s↓) · 잔여 보류 3구역 회수 · 상승여력 수식(용적률·비례율·분양가).
