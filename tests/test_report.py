@@ -2,7 +2,9 @@
 
 실행: python -m pytest tests/test_report.py
 """
-from redev.llm.report import _display_facts, _template_report, generate_report, verify_numbers
+from redev.llm.report import (
+    _display_facts, _template_report, _user_caveats, generate_report, verify_numbers,
+)
 
 _DATA = {
     "candidate": True, "b1_score": 0.94,
@@ -47,3 +49,62 @@ def test_generate_report_llm_and_fallback():
         raise RuntimeError("fail")
     fb = generate_report(_DATA, complete_fn=boom)
     assert fb["source"] == "template" and fb["hallucination"]["ok"]
+
+
+# ── 계약 v1.1 (6대 결함) 회귀 ──────────────────────────────────────────────
+
+# candidate=False인데 점수 높은 비후보 케이스(예언_환경점수는 항상 산출)
+_NONCAND = {
+    "candidate": False, "b1_score": 0.92,
+    "verdict": {"class": "관심 권역(후보 경계 밖)",
+                "headline": "환경 점수 상위 8.0%이나 후보 군집 미포함 — 현 시점 관망 권역. 단정 아님."},
+    "stages": {
+        "예언_환경점수": {"status": "ok", "result": {"label": "재개발 환경 점수", "rank_top_pct": 8.0, "caveats": []}},
+        "진단_요건": {"status": "na", "reason": "후보 군집 미형성 — 단일 필지로 요건 판정 불가"},
+        "진입_eligibility": {"status": "ok", "result": {
+            "진단_토허": {"toheo_applies": True, "gap_investment_possible": False},
+            "예언_잔여기간": {"known": False, "stage": None, "note": "해당 구역 아님 — 사업 단계 없음"}}},
+    },
+    "caveats": ["모든 수치 추정·참고치이며 투자 권유 아님(R15).",
+                "v1 후보경계는 거친 필터(코어 ~39% 포착) — 정밀 경계 아님(R13)."],
+}
+
+
+def test_facts_always_filled_no_dash():           # 결함 2
+    f = _display_facts(_NONCAND)
+    assert "산출 불가" in f["요건판정"]            # "—" 아님, 사유로
+    assert f["환경점수"].startswith("재개발 환경 점수 상위")
+    assert f.get("결론")                            # 결함 6: 결론 머리문장
+
+
+def test_noncandidate_contradiction_explained():  # 결함 1
+    f = _display_facts(_NONCAND)                   # rank 8% → 점수 높은데 후보 아님 → 설명 붙음
+    assert "후보판정설명" in f and "미포함" in f["후보판정설명"]
+
+
+def test_low_score_noncandidate_no_contradiction_note():  # 결함 1 경계 — 모순 없을 땐 미부착
+    low = {**_NONCAND, "stages": {**_NONCAND["stages"],
+           "예언_환경점수": {"status": "ok", "result": {"label": "재개발 환경 점수", "rank_top_pct": 100.0}}}}
+    f = _display_facts(low)
+    assert "후보판정설명" not in f                  # 점수 낮음 → '대상 아님'이 설명, 모순 문장 없음
+    assert f["환경점수"].startswith("재개발 환경 점수 상위")   # 그래도 환경점수는 채움(결함2)
+
+
+def test_stage_not_leaked_for_noncandidate():     # 결함 3
+    f = _display_facts(_NONCAND)
+    assert "잔여기간" not in f                      # 기간·단계 누수 없음
+    assert "단계상태" in f and "구역 아님" in f["단계상태"]
+
+
+def test_user_caveats_strip_internal_codes():     # 결함 4
+    uc = _user_caveats(_NONCAND["caveats"])
+    blob = " ".join(uc)
+    assert uc and all(code not in blob for code in ("R1", "R13", "R15", "§", "★", "39%"))
+    assert "투자 권유가 아니라" in blob
+
+
+def test_noncandidate_report_hallucination_zero():  # 결함 5·6 통합(환각 0 유지)
+    rep = generate_report(_NONCAND, complete_fn=lambda s, u: _template_report(
+        _display_facts(_NONCAND), _user_caveats(_NONCAND["caveats"])))
+    assert rep["hallucination"]["ok"]
+    assert "R15" not in rep["report_text"] and "39%" not in rep["report_text"]
