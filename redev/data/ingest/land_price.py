@@ -9,12 +9,13 @@ from __future__ import annotations
 import io
 import zipfile
 from functools import lru_cache
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-_YEARLY_DIR = Path("_data/raw/추가데이터/공시지가 연도별")
+from redev.paths import DATA
+
+_YEARLY_DIR = DATA / "raw/추가데이터/공시지가 연도별"
 _PRICE_COL = "공시지가(원/㎡)"
 
 

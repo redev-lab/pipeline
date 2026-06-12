@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from redev.data.location import admin_to_legal_dong, parse_location
+from redev.paths import DATA
 
 
 @dataclass
@@ -49,8 +50,8 @@ def build_context() -> Context:
     tm = load_training_matrix()
     aug = prepare_baseline_matrix()
     parcels, buildings = _load_parcels_buildings()
-    allf = pd.read_parquet("_data/processed/infer_features.parquet")
-    trades = pd.read_parquet("_data/processed/_trades_36m.parquet")
+    allf = pd.read_parquet(DATA / "processed/infer_features.parquet")
+    trades = pd.read_parquet(DATA / "processed/_trades_36m.parquet")
     cfg = load_infer_config()
 
     oof = oof_scores(aug, tm.edge_index, tm.pnu_to_idx)

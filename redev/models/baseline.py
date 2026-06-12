@@ -29,10 +29,11 @@ from redev.data.ingest.zone_boundary import load_zones
 from redev.data.labels import build_label_table
 from redev.graph.build import build_graph, reconcile_labels_to_graph
 from redev.graph.features import FEATURE_COLUMNS, node_features
+from redev.paths import DATA
 
-# ── v1 로컬 원천 경로. 상업 전환 시 소스 교체(§11), config 승격은 v1.1. ──
-_RAW = Path("_data/raw")
-_PROCESSED = Path("_data/processed")
+# ── v1 로컬 원천 경로. 작업 디렉토리 무관(redev.paths.DATA 기준, §Phase8 구동사고). ──
+_RAW = DATA / "raw"
+_PROCESSED = DATA / "processed"
 
 
 def _vsizip(zip_name: str, inner: str) -> str:

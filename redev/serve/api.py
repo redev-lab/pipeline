@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-_SCORES_CACHE = "_data/processed/infer_scores_6gu.parquet"
+from redev.paths import DATA
+
+_SCORES_CACHE = DATA / "processed/infer_scores_6gu.parquet"
 
 
 def load_scores() -> pd.DataFrame:

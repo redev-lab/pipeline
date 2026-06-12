@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 
-_CORPUS_DIR = Path("_data/corpus")
+from redev.paths import DATA
+
+_CORPUS_DIR = DATA / "corpus"
 
 _SYSTEM = (
     "너는 한국 도시정비사업(재개발) 뉴스/공고에서 '사회신호'만 뽑는 추출기다. "

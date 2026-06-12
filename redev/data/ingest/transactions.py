@@ -12,13 +12,13 @@ import os
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from pathlib import Path
 
 import pandas as pd
 
 from redev.data.location import admin_to_legal_dong, parse_location
+from redev.paths import DATA
 
-_CACHE = Path("_data/cache/trades")
+_CACHE = DATA / "cache/trades"
 # (엔드포인트, .env 키명) — 2026-06-12 실호출 검증(avm.md §3).
 _ENDPOINTS = {
     "villa": ("http://apis.data.go.kr/1613000/RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade", "VILLA_TRADE_API_KEY"),

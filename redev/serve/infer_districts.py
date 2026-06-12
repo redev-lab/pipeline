@@ -5,12 +5,12 @@
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 
-_CACHE = Path("_data/processed/infer_scores_6gu.parquet")
+from redev.paths import DATA
+
+_CACHE = DATA / "processed/infer_scores_6gu.parquet"
 
 
 def build_inference_scores(*, force_rebuild: bool = False) -> pd.DataFrame:

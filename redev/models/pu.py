@@ -8,6 +8,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from redev.paths import DATA
+
 UNDESIGNATED_CUT = 0.5      # labels §4 노후미지정 컷(현재 노후도≥ → uncertain)
 
 
@@ -19,7 +21,7 @@ def load_pu_matrix():
     """
     from redev.models.baseline import _load_parcels_buildings, prepare_baseline_matrix
     aug = prepare_baseline_matrix()
-    infer = pd.read_parquet("_data/processed/infer_features.parquet")
+    infer = pd.read_parquet(DATA / "processed/infer_features.parquet")
     unc = infer[~infer["pnu"].isin(set(aug["pnu"])) & (infer["aging"] >= UNDESIGNATED_CUT)].copy()
     parcels, _ = _load_parcels_buildings()
     cent = parcels.set_index("pnu").geometry.centroid
