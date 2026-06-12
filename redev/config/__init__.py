@@ -23,6 +23,7 @@ _THRESHOLDS_PATH = _CONFIG_DIR / "legal_thresholds.yaml"
 _GRAPH_PATH = _CONFIG_DIR / "graph.yaml"
 _AVM_PATH = _CONFIG_DIR / "avm.yaml"
 _ELIG_PATH = _CONFIG_DIR / "eligibility.yaml"
+_INFER_PATH = _CONFIG_DIR / "infer.yaml"
 
 
 def _load_yaml(path: Path) -> dict:
@@ -54,6 +55,12 @@ def load_avm_config() -> dict:
 def load_eligibility_config() -> dict:
     """eligibility.yaml 파싱 (진입: 토허 분기·단계 잔여기간의 단일 출처. ★수시변경 규제)."""
     return _load_yaml(_ELIG_PATH)
+
+
+@lru_cache(maxsize=None)
+def load_infer_config() -> dict:
+    """infer.yaml 파싱 (추론 출력: 클러스터 컷·폴리곤·백분위 히트맵의 단일 출처)."""
+    return _load_yaml(_INFER_PATH)
 
 
 @lru_cache(maxsize=None)
