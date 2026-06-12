@@ -26,8 +26,23 @@ def test_compactness_square_vs_thin():
     assert _compactness(box(0, 0, 10, 0.1)) < 0.2                    # 길쭉 → 낮음
 
 
-def test_node_features_aging_t_dependent():
+def _stub_v11(monkeypatch):
+    """v1.1 직교 피처 소스를 합성 기본값으로(실데이터 로드·sjoin 회피, 단위테스트 격리)."""
+    import redev.data.ingest.land_price as LP
+    import redev.data.ingest.rail as RAIL
+    import redev.graph.features as F
+    monkeypatch.setattr(F, "_v11_static", lambda p: {
+        "zoning_ord": pd.Series(dtype=float), "zoning_missing": pd.Series(dtype=float),
+        "centroid": p.set_index("pnu").geometry.centroid})
+    monkeypatch.setattr(LP, "land_price_features",
+                        lambda rows, **k: pd.DataFrame({"land_pct": [0.5] * len(rows), "land_missing": [1] * len(rows)}))
+    monkeypatch.setattr(RAIL, "rail_features",
+                        lambda rows, parcels, **k: pd.DataFrame({"rail_prox": [0.5] * len(rows)}))
+
+
+def test_node_features_aging_t_dependent(monkeypatch):
     """★보강1/R1: 같은 필지의 노후도가 t에 따라 다르다(1985 건물이 30년 임계 넘음)."""
+    _stub_v11(monkeypatch)
     parcels = gpd.GeoDataFrame(
         [{"pnu": "A", "jimok": "대", "geometry": box(0, 0, 10, 10)}],
         geometry="geometry", crs="EPSG:5186",

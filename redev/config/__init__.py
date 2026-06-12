@@ -25,6 +25,7 @@ _AVM_PATH = _CONFIG_DIR / "avm.yaml"
 _ELIG_PATH = _CONFIG_DIR / "eligibility.yaml"
 _INFER_PATH = _CONFIG_DIR / "infer.yaml"
 _LLM_PATH = _CONFIG_DIR / "llm.yaml"
+_FEATURES_PATH = _CONFIG_DIR / "features.yaml"
 
 
 def _load_yaml(path: Path) -> dict:
@@ -68,6 +69,12 @@ def load_infer_config() -> dict:
 def load_llm_config() -> dict:
     """llm.yaml 파싱 (Gemini 모델·temperature·재시도의 단일 출처. ★핀 버전 — 별칭 금지)."""
     return _load_yaml(_LLM_PATH)
+
+
+@lru_cache(maxsize=None)
+def load_features_config() -> dict:
+    """features.yaml 파싱 (v1.1 직교 피처: 용도지역 ordinal·FAR 상한의 단일 출처)."""
+    return _load_yaml(_FEATURES_PATH)
 
 
 @lru_cache(maxsize=None)

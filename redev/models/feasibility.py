@@ -17,9 +17,9 @@ def oof_scores(aug, edge_index, pnu_to_idx, *, feat_cols=None) -> np.ndarray:
 
     B1 재사용(새 모델 아님, R9 일관) — feasibility는 그 위의 보정·랭킹 레이어.
     """
-    from redev.models.baseline import feature_sets, run_xgb_cv
-    fc = feat_cols or feature_sets(aug)["B1"]
-    return run_xgb_cv(aug, fc, edge_index, pnu_to_idx, model_name="B1")["all_p"]
+    from redev.models.baseline import production_feature_set, run_xgb_cv
+    fc = feat_cols or production_feature_set(aug)     # ★production B1+ −용도지역(infer와 일관)
+    return run_xgb_cv(aug, fc, edge_index, pnu_to_idx, model_name="B1+prod")["all_p"]
 
 
 def calibrate(oof: np.ndarray, y: np.ndarray):

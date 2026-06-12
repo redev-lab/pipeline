@@ -326,6 +326,16 @@ def feature_sets(aug: pd.DataFrame) -> dict:
     return {"B1": list(FEATURE_COLUMNS) + nb1, "B1+": list(FEATURE_COLUMNS) + nb1 + nb2}
 
 
+def production_feature_set(aug: pd.DataFrame) -> list:
+    """★production 심장1 = B1+(2홉) ★용도지역 제외.
+
+    측정 근거(v1.1 재경기 ablation): 용도지역(2026 스냅샷)은 과거 라벨에 종상향 역류(누수, §13)라
+    LODO에서 net-negative — B1+ -용도지역이 PR-AUC 0.937→0.940·격전지 0.683→0.712로 더 낫다.
+    ★단 AVM(현재가치)·stage1(저밀)은 현재시점이라 용도지역 유지(과제별 분리 — 누수 무대만 제외).
+    """
+    return [c for c in feature_sets(aug)["B1+"] if "zoning" not in c]
+
+
 def aging_floor_predict(aug: pd.DataFrame):
     """B-2 동어반복 바닥선: 점수=aging 그대로(무학습). best-F1 임계가 컷을 정함.
 

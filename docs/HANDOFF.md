@@ -1,5 +1,18 @@
 # 인수인계 (다음 세션)
 
+## ★v1.1 피처 사이클 완료 (2026-06-12) — 병목 해부
+- ingest 3종(공시지가 as-of-t·용도지역·역세권 as-of-t) + features 5→10 + 같은 LODO 재경기.
+- ★결과: B1+ 격전지 0.622→0.683·AVM 격차 절반(피처 병목 완화) / GNN 0.929→0.913 악화·infer 81%
+  불변(라벨 병목). leakage_ablation: 용도지역 2026스냅샷 누수 net-negative(§13 확인).
+- ★v2 우선순위 측정 확정: 심장1/infer=전역 라벨 확장(R7-①)+PU 학습, 심장2=가치피처 유지+as-of-t 용도지역.
+- ★**production 심장1 = B1+ −용도지역** 확정(`production_feature_set`): 용도지역 2026스냅샷 누수가
+  LODO net-negative(B1+ 0.937→0.940·격전지 0.683→0.712). infer·feasibility 재배선. AVM·stage1은
+  현재시점이라 용도지역 유지(과제별 분리).
+- ★**백로그 v1.2 = PU 학습**(uncertain 5.6만 활용, 과대예측 81% 직접 겨냥, ★신규 데이터 불요) —
+  전역 확장(v2)보다 싼 선행 레버. 다음 사이클 1순위 후보.
+- 다음: v1.2 PU 학습 / Phase 8 데모 3종(마포·강남 ingest) / v2 전역 라벨 확장 중 택1.
+
+
 ## ★현재 상태 (2026-06-12): Phase 0~7 완료 — v1 파이프라인 등뼈+LLM 완성
 - **Phase 7 = LLM 종합 완료** (`phase-7-llm`): ① retrieval(numpy 코사인, t제외)·② nlp/layer3
   (Gemini 사회신호, 무신호=정상)·③ llm/report(⑨ 5종 판단, ★환각 0 검증)·run(with_report=True) 연결.
