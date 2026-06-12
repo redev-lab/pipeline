@@ -15,7 +15,9 @@ comparable:
   min_trades: 3                # 비교군 최소 거래수
   agg: median
 
-upside:
-  # ★R14 분담금 불투명 → low/mid/high 시나리오 비율(대지지분 매입가 대비). 단정 금지.
-  contribution_ratio: { low: 0.3, mid: 0.6, high: 1.0 }
-  # TODO: 분담금 비율은 사업단계·용적률·일반분양가에 좌우 — v1 근사(시나리오), v1.1 정교화.
+# ★상승여력 수식(신축시세 − 매입가 − 분담금)은 v1.1 — 단위(대지지분평 vs 전용평) 환산에
+#   용적률·비례율·조합원분양가가 필요. v1은 '시세 맥락'(두 평당가 병렬)만, 빼기 금지(market_context).
+#   '안 하는' 게 아니라 '정직하게 계산할 재료 대기' 포지션(avm.md §6·§9).
+upside_v1_1:
+  required_inputs: [용적률, 비례율, 조합원분양가]   # 이 입력이 와야 상승여력 수치 정직 산출
+  contribution_ratio: { low: 0.3, mid: 0.6, high: 1.0 }  # 분담금 시나리오(v1.1 사용 예정)
