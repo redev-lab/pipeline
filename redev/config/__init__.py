@@ -21,6 +21,7 @@ _CONFIG_DIR = Path(__file__).resolve().parent
 _DISTRICTS_PATH = _CONFIG_DIR / "districts.yaml"
 _THRESHOLDS_PATH = _CONFIG_DIR / "legal_thresholds.yaml"
 _GRAPH_PATH = _CONFIG_DIR / "graph.yaml"
+_AVM_PATH = _CONFIG_DIR / "avm.yaml"
 
 
 def _load_yaml(path: Path) -> dict:
@@ -40,6 +41,12 @@ def _load_yaml(path: Path) -> dict:
 def load_graph_config() -> dict:
     """graph.yaml 파싱 (인접 그래프 구성: 제외지목·버퍼·밀도반경의 단일 출처)."""
     return _load_yaml(_GRAPH_PATH)
+
+
+@lru_cache(maxsize=None)
+def load_avm_config() -> dict:
+    """avm.yaml 파싱 (심장2 AVM: 반경집계·비교신축·상승여력 시나리오의 단일 출처)."""
+    return _load_yaml(_AVM_PATH)
 
 
 @lru_cache(maxsize=None)
