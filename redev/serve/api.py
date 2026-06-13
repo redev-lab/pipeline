@@ -160,8 +160,12 @@ def build_serve_context(*, log=print):
     zlist = [{"zone_id": z, "pnus": set(g["pnu"]), "t": int(g["t"].iloc[0]), "zone_type": ztype.get(z)}
              for z, g in pos.groupby("zone_id")]
     zv = build_zone_vectors(zlist, parcels, buildings)
-    log(f"[zones] 사례 {len(zlist)}구역 ({time.time()-t0:.0f}s 누적)")
+    pnu_zone = dict(zip(pos["pnu"], pos["zone_id"]))         # 필지→지정구역(계획정보 조회, §5)
+    from redev.data.zone_attrs import load_zone_attrs
+    zone_attrs = load_zone_attrs()                          # zone_id→고시 계획정보(verified만 단정)
+    log(f"[zones] 사례 {len(zlist)}구역 / 계획정보 {len(zone_attrs)}구역 ({time.time()-t0:.0f}s 누적)")
 
     return Context(parcels, buildings, pnu_to_idx, None, jibun_index,    # edge_index=None(런타임 미사용)
                    scores, calibrated, pnu_cluster, float(thr),
-                   tgt["target_pyung"], tgt["agg_level"], comp, name2code, zv)
+                   tgt["target_pyung"], tgt["agg_level"], comp, name2code, zv,
+                   pnu_zone=pnu_zone, zone_attrs=zone_attrs)

@@ -62,6 +62,21 @@ def _display_facts(data: dict) -> dict:
                       f"신축 아파트 전용 평당 {_won(mc.get('newbuild_exclu_pyung_man'))}")
     else:
         f["시세맥락"] = "산출 불가(반경 내 거래 부족)"
+
+    # ★계획정보(고시 추출, §5) — verified만 단정, flagged는 '(잠정)', 출처·최신 플래그 동봉
+    pi = (st.get("진단_계획정보", {}) or {}).get("result")
+    if pi and pi.get("attrs"):
+        parts = []
+        for a in ["용적률", "계획세대수", "구역면적", "건폐율"]:
+            it = pi["attrs"].get(a)
+            if it:
+                tag = "" if it.get("grade") == "verified" else "(잠정)"
+                parts.append(f"{a} {it['raw']}{tag}")
+        if parts:
+            src = f"서울고시 {pi['고시번호']} 기준"
+            if pi.get("flags"):
+                src += ", 후속 변경 미반영"           # ★흑석2 최신 미반영 등
+            f["계획정보"] = " · ".join(parts) + f" ({src})"
     el = (st.get("진입_eligibility", {}) or {}).get("result")
     if el:
         t = el["진단_토허"]
@@ -156,7 +171,7 @@ def _template_report(facts: dict, caveats: list) -> str:
         L.append(f"\n결론: {facts['결론']}")
     sections = [
         ("1. 될까 (사업 환경)", ["판정", "후보판정설명", "환경점수", "요건판정", "노후도", "접도율"]),
-        ("2. 얼마 (시세 맥락)", ["시세맥락"]),
+        ("2. 얼마 (시세 맥락·계획)", ["시세맥락", "계획정보"]),
         ("3. 언제 (사업 단계)", ["잔여기간", "단계상태"]),
         ("4. 리스크 (사회신호)", ["사회신호", "유사사례"]),
         ("5. 진입 / 요약", ["토허", "행동분류"]),

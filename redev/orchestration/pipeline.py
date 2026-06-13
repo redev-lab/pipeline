@@ -33,6 +33,8 @@ class Context:
     comp: pd.Series               # pnu → 비교신축 전용 평당가
     name2code: dict               # 구명 → 시군구코드
     zone_vectors: object = None   # 사례검색용 51구역 벡터(retrieval)
+    pnu_zone: dict = None         # pnu → 지정구역 zone_id (고시 계획정보 조회용)
+    zone_attrs: dict = None       # zone_id → 고시 계획정보(용적률·세대수 등, verified/flagged)
 
 
 def build_context() -> Context:
@@ -208,6 +210,12 @@ def run(address: str, ctx: Context, *, property_type: str | None = None, stage: 
             agg_level=ctx.agg_level.get(pnu))
     else:
         out["stages"]["진단_시세맥락"] = {"status": "skipped", "reason": "반경 내 거래 0(타깃 결측)"}
+
+    # 계획정보(고시 추출, §5) — 질의 필지가 지정구역이면 그 구역 용적률·세대수 등. verified만 단정.
+    zid = (getattr(ctx, "pnu_zone", None) or {}).get(pnu)
+    za = (getattr(ctx, "zone_attrs", None) or {}).get(zid) if zid else None
+    if za and za.get("attrs"):
+        out["stages"]["진단_계획정보"] = {"status": "ok", "result": za}
 
     # ⑦ eligibility 진입(물건유형 입력 시). ★stage 기본값 누수 차단(계약 §11-3): stage 그대로 전달,
     #    잔여기간은 후보 구역일 때만(in_zone=candidate). 토허는 현재 사실이라 구역 무관 산출.

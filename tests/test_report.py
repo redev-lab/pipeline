@@ -109,6 +109,21 @@ def test_stage_not_leaked_for_noncandidate():     # 결함 3
     assert "단계상태" in f and "구역 아님" in f["단계상태"]
 
 
+def test_plan_info_verified_flagged_and_latest_flag():  # §5 계획정보 표시 분기
+    d = {**_DATA, "stages": {**_DATA["stages"], "진단_계획정보": {"status": "ok", "result": {
+        "zone_name": "흑석2구역", "고시번호": "2025-426", "고시일자": "2025-07-31",
+        "flags": ["최신 미반영(서울시 2025-659 변경안 협의중·미입수)"],
+        "attrs": {"용적률": {"value": 599.96, "raw": "599.96", "label": "용적률", "grade": "verified"},
+                  "계획세대수": {"value": 1012, "raw": "1,012세대", "label": "건립예정세대수", "grade": "verified"},
+                  "건폐율": {"value": 52.26, "raw": "52.26", "label": "건폐율", "grade": "flagged"}}}}}}
+    f = _display_facts(d)
+    assert "용적률 599.96" in f["계획정보"] and "계획세대수 1,012세대" in f["계획정보"]
+    assert "건폐율 52.26(잠정)" in f["계획정보"]              # ★flagged → 잠정(단정 금지)
+    assert "서울고시 2025-426 기준, 후속 변경 미반영" in f["계획정보"]   # ★출처 + 최신 플래그
+    # 환각검증: 계획정보 숫자가 표시값에 있어 리포트 인용 시 통과
+    assert verify_numbers("용적률 599.96, 1,012세대 (서울고시 2025-426 기준)", f)["ok"]
+
+
 def test_similar_case_uses_display_name_not_raw_code():  # §B-3
     d = {**_DATA, "retrieval": {"matches": [
         {"zone_id": "11590NTC202409250002", "display_name": "동작구 노량진동 일대 (2009)",
