@@ -10,19 +10,35 @@ from __future__ import annotations
 import re
 
 
-def extract_text(path) -> str:
-    """PDF → 텍스트. pdfplumber로 페이지 텍스트를 잇고 정제(\\x00·과공백 제거, 숫자 토큰 보존).
+def read_gosi(path) -> dict:
+    """PDF → {text, rows}. text=산문+표 셀 직렬화(LLM 입력·숫자 원문대조용), rows=표 셀 행 리스트.
 
-    왜 pdfplumber: 표가 많은 고시문에서 셀 텍스트를 비교적 잘 살린다(셀 경계는 공백/줄로). 표 구조
-    복원이 아니라 '본문 텍스트'가 목적 — 추출은 LLM이 문맥으로 한다(§3). 스캔본은 ''에 가깝게 나온다.
+    ★표 셀 행(rows): `extract_tables()`로 표를 셀 격자로 뽑아 행마다 `라벨 | 값 | 값`으로 직렬화.
+    검증이 '같은 행에 건폐율 라벨과 그 값이 함께 있나'로 출처를 *결정론으로* 확인(LLM 인용 의존 제거,
+    산문 평탄화로 뭉개진 표 셀의 출처 보류 문제 해결). 스캔본은 text 짧고 rows 빈 리스트.
     """
-    import pdfplumber  # PDF 텍스트/표 레이어 파서(스캔 이미지엔 텍스트층이 없어 빈 문자열)
+    import pdfplumber  # PDF 텍스트/표 레이어 파서(스캔 이미지엔 텍스트층이 없어 빈 결과)
 
-    parts = []
+    prose, rows, grids = [], [], []
     with pdfplumber.open(str(path)) as pdf:
         for page in pdf.pages:
-            parts.append(page.extract_text() or "")
-    return _clean("\n".join(parts))
+            prose.append(page.extract_text() or "")
+            for tbl in (page.extract_tables() or []):
+                grid = [[(str(c).replace("\n", " ").strip() if c else "") for c in row] for row in tbl]
+                grids.append(grid)                            # 구조 보존(헤더 컬럼 매칭용)
+                for row in grid:
+                    cells = [c for c in row if c]
+                    if cells:
+                        rows.append(" | ".join(cells))
+    text = _clean("\n".join(prose))
+    if rows:
+        text += "\n\n[표 셀]\n" + _clean("\n".join(rows))     # LLM·산문대조에도 깨끗한 셀 포함
+    return {"text": text, "rows": rows, "grids": grids}
+
+
+def extract_text(path) -> str:
+    """호환 진입점 — read_gosi(path)['text']."""
+    return read_gosi(path)["text"]
 
 
 def _clean(text: str) -> str:

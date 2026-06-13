@@ -17,18 +17,24 @@ class LLMError(Exception):
     """LLM 호출 실패(재시도 소진 포함). 호출부는 이걸 잡아 템플릿 폴백."""
 
 
-_CLIENT = None
+_CLIENTS: dict = {}      # 키값 → genai.Client (키별 캐시)
 
 
-def _client():
-    global _CLIENT
-    if _CLIENT is None:
+def _resolve_keys(conf) -> list:
+    """config api_key_envs 순서로 .env에서 존재하는 (이름, 키값) 목록. 앞이 우선(unbbox)."""
+    names = conf.get("api_key_envs") or ["GEMINI_API_KEY"]
+    keys = [(n, os.getenv(n)) for n in names]
+    keys = [(n, v) for n, v in keys if v]
+    if not keys:
+        raise LLMError(f"Gemini API 키 미설정 — .env에 {names} 중 하나 필요")
+    return keys
+
+
+def _client_for(key: str):
+    if key not in _CLIENTS:
         from google import genai
-        key = os.getenv("GEMINI_API_KEY")
-        if not key:
-            raise LLMError("GEMINI_API_KEY 미설정 — .env 확인")
-        _CLIENT = genai.Client(api_key=key)
-    return _CLIENT
+        _CLIENTS[key] = genai.Client(api_key=key)
+    return _CLIENTS[key]
 
 
 def _retry_delay(msg: str):
@@ -52,23 +58,31 @@ def complete(system: str, user: str, *, temperature: float | None = None, cfg=No
     from google.genai import types
     conf = (cfg or load_llm_config())["llm"]
     temp = conf["temperature"] if temperature is None else temperature
+    keys = _resolve_keys(conf)
     last = None
-    for attempt in range(conf["max_retries"]):
-        try:
-            r = _client().models.generate_content(
-                model=conf["model"], contents=user,
-                config=types.GenerateContentConfig(system_instruction=system, temperature=temp),
-            )
-            if not r.text:
-                raise LLMError("빈 응답")
-            return r.text
-        except LLMError:
-            raise
-        except Exception as e:                       # SDK 예외(429 등)
-            last, msg = e, str(e)
-            if _is_transient(msg) and attempt < conf["max_retries"] - 1:
-                delay = _retry_delay(msg) or conf["base_backoff_s"] * (2 ** attempt)
-                time.sleep(min(delay, 60))           # 지수 백오프(서버 retryDelay 우선, 상한 60s)
-                continue
-            raise LLMError(f"LLM 호출 실패: {msg[:200]}") from e
-    raise LLMError(f"재시도 {conf['max_retries']}회 소진: {str(last)[:200]}")
+    for ki, (kname, kval) in enumerate(keys):        # ★키 회전 — 앞 키 일일한도 소진 시 다음 키
+        more_keys = ki < len(keys) - 1
+        for attempt in range(conf["max_retries"]):
+            try:
+                r = _client_for(kval).models.generate_content(
+                    model=conf["model"], contents=user,
+                    config=types.GenerateContentConfig(system_instruction=system, temperature=temp),
+                )
+                if not r.text:
+                    raise LLMError("빈 응답")
+                return r.text
+            except LLMError:
+                raise
+            except Exception as e:                   # SDK 예외(429 등)
+                last, msg = e, str(e)
+                is_quota = "RESOURCE_EXHAUSTED" in msg or "PerDay" in msg or "exceeded your current quota" in msg
+                if is_quota and more_keys:
+                    break                            # 이 키 한도 소진 → 다음 키로 회전(백오프 생략)
+                if _is_transient(msg) and attempt < conf["max_retries"] - 1:
+                    delay = _retry_delay(msg) or conf["base_backoff_s"] * (2 ** attempt)
+                    time.sleep(min(delay, 60))       # 지수 백오프(서버 retryDelay 우선, 상한 60s)
+                    continue
+                if more_keys:
+                    break                            # 비한도 오류여도 다음 키 시도(견고)
+                raise LLMError(f"LLM 호출 실패: {msg[:200]}") from e
+    raise LLMError(f"모든 키 소진/실패: {str(last)[:200]}")

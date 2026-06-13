@@ -48,6 +48,24 @@ def test_missing_passthrough():
     assert v["grade"] == "missing" and v["value"] is None
 
 
+def test_table_provenance_rescues_messy_sentence():   # ★표 셀 출처: 문장 깨져도 표 행이면 verified
+    # LLM 인용 문장은 산문에 substring 매칭 안 됨 → 단, 값+라벨이 같은 표 행에 있음(read_gosi가 셀을 text에 합침)
+    rows = ["획지 | 건폐율(%) | 54.30 | 52.26", "용도지역 | 제3종일반주거"]
+    src = "정비계획 결정. 본문 산문.\n[표 셀]\n" + "\n".join(rows)
+    item = {"raw": "52.26", "label": "건폐율", "변경구분": "변경후",
+            "sentence": "건폐율 변경후 52.26 (산문엔 깨져 없음)"}
+    v = verify_attr("건폐율", item, src, 고시번호="x", 고시일자="y", table_rows=rows)
+    assert v["grade"] == "verified" and v["checks"]["table_provenance"] is True
+
+
+def test_broken_table_stays_flagged_not_forced():     # ★억지 통과 금지: 표에도 없으면 flagged 유지
+    src = "정비계획 결정. 건폐율 52.26"   # 숫자는 원문에 있음(환각 아님)
+    rows = ["관계없는 | 행 | 99.9"]      # 건폐율 라벨과 값이 같은 행에 없음
+    item = {"raw": "52.26", "label": "건폐율", "변경구분": "변경후", "sentence": "엉뚱한 문장"}
+    v = verify_attr("건폐율", item, src, 고시번호="x", 고시일자="y", table_rows=rows)
+    assert v["grade"] == "flagged" and v["checks"]["in_source"] is True   # 환각 아님, 출처만 보류
+
+
 def test_verify_extraction_summary():
     ex = {"zone_name": "장위15구역", "고시번호": "2024-448", "고시일자": "2024-09-19",
           "attrs": {"용적률": {"raw": "190.0%", "label": "기준용적률", "변경구분": "변경후",

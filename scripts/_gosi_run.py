@@ -7,7 +7,7 @@ sys.path.insert(0, os.getcwd()); sys.stdout.reconfigure(encoding="utf-8")
 for line in open(".env", encoding="utf-8"):
     if "=" in line and not line.lstrip().startswith("#"):
         k, v = line.strip().split("=", 1); os.environ[k] = v
-from redev.data.ingest.gosi_body import extract_text, is_scanned
+from redev.data.ingest.gosi_body import is_scanned, read_gosi
 from redev.nlp.gosi_extract import ATTRS, extract_attrs
 from redev.nlp.gosi_verify import RANGES, verify_extraction
 
@@ -27,10 +27,10 @@ cov = {a: 0 for a in ATTRS}
 print(f"범위 가드: {RANGES}\n")
 for s in SAMPLES:
     t0 = time.time()
-    text = extract_text(DIR + s["file"])
+    g = read_gosi(DIR + s["file"]); text, rows, grids = g["text"], g["rows"], g["grids"]
     scan = is_scanned(text)
     ex = extract_attrs(text, zone_name=s["zone"], 고시번호=s["n"], 고시일자=s["date"])
-    vr = verify_extraction(ex, text)
+    vr = verify_extraction(ex, text, table_rows=rows, grids=grids)
     print("=" * 78)
     print(f"{s['zone']} (고시 {s['n']}, {s['date']}) — {s['role']}  [{len(text):,}자, {'스캔' if scan else '디지털'}, {time.time()-t0:.0f}s]")
     if s["flags"]:
