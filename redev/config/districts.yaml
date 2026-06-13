@@ -22,10 +22,49 @@ districts:
       sigungu_code: "11530"
 
   # 추론/데모 전용 추가 — 학습엔 안 썼지만 추론·데모로 보여줄 구.
-  #   광흥창(마포, 경계 케이스—모아타운) / 역삼(강남, true-negative) 데모용.
-  #   GNN이 inductive면 학습 안 한 이 구들에도 추론이 돌아야 한다(Phase 3).
+  #   GNN/B1+가 inductive면 학습 안 한 이 구들에도 추론이 돌아야 한다(Phase 3).
+  #   ★서울 전역 커버(C): 학습 4구를 제외한 나머지 21구 전부. 모델 재학습 0(동결).
+  #   의제처리 SHP·GIS건물·지적도는 서울 전체분이라 클립만 하면 됨(규칙7 config 확장).
   inference_extra:
+    - name: 종로구
+      sigungu_code: "11110"
+    - name: 중구
+      sigungu_code: "11140"
+    - name: 용산구
+      sigungu_code: "11170"
+    - name: 성동구
+      sigungu_code: "11200"
+    - name: 광진구
+      sigungu_code: "11215"
+    - name: 동대문구
+      sigungu_code: "11230"
+    - name: 중랑구
+      sigungu_code: "11260"
+    - name: 강북구
+      sigungu_code: "11305"
+    - name: 도봉구
+      sigungu_code: "11320"
+    - name: 노원구
+      sigungu_code: "11350"
+    - name: 서대문구
+      sigungu_code: "11410"
     - name: 마포구
       sigungu_code: "11440"
+    - name: 양천구
+      sigungu_code: "11470"
+    - name: 강서구
+      sigungu_code: "11500"
+    - name: 금천구
+      sigungu_code: "11545"
+    - name: 영등포구
+      sigungu_code: "11560"
+    - name: 관악구
+      sigungu_code: "11620"
+    - name: 서초구
+      sigungu_code: "11650"
     - name: 강남구
       sigungu_code: "11680"
+    - name: 송파구
+      sigungu_code: "11710"
+    - name: 강동구
+      sigungu_code: "11740"

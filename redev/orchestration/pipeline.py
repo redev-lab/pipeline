@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from redev.data.location import admin_to_legal_dong, parse_location
+from redev.paths import DATA
 
 
 @dataclass
@@ -49,8 +50,8 @@ def build_context() -> Context:
     tm = load_training_matrix()
     aug = prepare_baseline_matrix()
     parcels, buildings = _load_parcels_buildings()
-    allf = pd.read_parquet("_data/processed/infer_features.parquet")
-    trades = pd.read_parquet("_data/processed/_trades_36m.parquet")
+    allf = pd.read_parquet(DATA / "processed/infer_features.parquet")
+    trades = pd.read_parquet(DATA / "processed/_trades_36m.parquet")
     cfg = load_infer_config()
 
     oof = oof_scores(aug, tm.edge_index, tm.pnu_to_idx)
@@ -111,6 +112,15 @@ def address_to_pnu(address: str, ctx: Context) -> str:
     return pnu
 
 
+def _confidence(score: float, thr: float, margin: float) -> str:
+    """★신뢰도 — 운영임계값에서 margin 이상 떨어지면 '고신뢰'(확실히 높음/낮음), 근처면 '저신뢰'(애매).
+
+    점수 최하위(0.058)가 '저신뢰'로 역전되던 버그 수정: 신뢰도는 '점수 높낮이'가 아니라
+    '경계에서의 거리'다. 극단값일수록 분류가 확실 → 고신뢰.
+    """
+    return "고신뢰" if abs(score - thr) >= margin else "저신뢰"
+
+
 def _stage(fn, *a, **k):
     """단계 try/except 래퍼 — 부분 실패도 전체 안 죽임. (status, value)."""
     try:
@@ -119,9 +129,35 @@ def _stage(fn, *a, **k):
         return {"status": "error", "reason": f"{type(e).__name__}: {e}"}
 
 
+def _verdict(out: dict) -> dict:
+    """★결정론 결론(계약 v1.1 §11-6) — 한 문장 headline + 행동분류 class. LLM 아님(규칙4).
+
+    headline의 백분위는 '예언_환경점수' 표시값과 동일 원값(rank_top_pct)을 써 환각검증과 일치.
+    분류: 후보(요건 경로) / 관심(점수 높으나 군집 밖) / 대상 아님(점수 낮음). 단정 회피 문구 고정.
+    """
+    from redev.config import load_infer_config
+    fe = (out["stages"].get("예언_환경점수", {}) or {}).get("result") or {}
+    pct = fe.get("rank_top_pct")
+    pct_s = fe.get("rank_phrase") or "환경 점수 산출 불가"     # ★표시 문구(상위/하위, §B-1)와 일치
+    if out.get("candidate"):
+        path = ((out["stages"].get("진단_요건", {}) or {}).get("result") or {}).get("path")
+        cls = f"후보 — {path} 경로" if path else "후보 군집(요건 판정 보류)"
+        head = f"환경 점수 {pct_s}, 후보 군집 포함 — {cls}. 추정·참고치이며 단정 아님."
+    else:
+        interest_pct = load_infer_config()["cluster"]["tight_top_pct"]   # 상위 N%면 '관심'(경계 밖)
+        if pct is not None and pct <= interest_pct:
+            cls = "관심 권역(후보 경계 밖)"
+            head = f"환경 점수 {pct_s}이나 후보 군집 미포함 — 현 시점 관망 권역. 단정 아님."
+        else:
+            cls = "대상 아님"
+            head = f"환경 점수 {pct_s} — 재개발 환경과 거리가 있어 현 시점 대상 아님. 단정 아님."
+    return {"class": cls, "headline": head}
+
+
 def run(address: str, ctx: Context, *, property_type: str | None = None, stage: str | None = None,
         with_report: bool = False) -> dict:
     """주소 → 종합 판단(진단/예언 분리 + caveats). §8 직선 + 저신뢰 폴백 if + ⑨ 리포트(opt-in)."""
+    from redev.config import load_infer_config
     from redev.models.avm import market_context
     from redev.models.feasibility import score_feasibility
     from redev.rules.eligibility import score_eligibility
@@ -138,19 +174,31 @@ def run(address: str, ctx: Context, *, property_type: str | None = None, stage: 
     idx = ctx.pnu_to_idx.get(pnu)
     out["b1_score"] = round(float(ctx.scores[idx]), 3) if idx is not None else None
 
-    # ★저신뢰 폴백 if (동적 지점 1): 점수 낮으면 "후보 환경 아님" 표시(그래도 시세는 보여줌)
+    # ★저신뢰 폴백 if (동적 지점 1): 점수 낮거나 군집 미형성이면 "후보 아님"(그래도 시세·점수는 제공)
     cluster = ctx.pnu_cluster.get(pnu)
-    if idx is None or ctx.scores[idx] < ctx.thr or cluster is None:
-        out["candidate"] = False
-        out["note"] = "이 필지는 재개발 환경 후보 클러스터에 속하지 않음(저신뢰) — 시세 맥락만 제공."
-    else:
-        out["candidate"] = True
-        out["cluster_size"] = len(cluster)
-        # ④ stage1 요건(클러스터)
-        out["stages"]["진단_요건"] = _stage(score_cluster, cluster, ctx.parcels, ctx.buildings)
-        # ⑥ feasibility 환경 점수(클러스터 아니어도 노드 점수로 가능하나, 후보일 때만 의미)
+    candidate = not (idx is None or ctx.scores[idx] < ctx.thr or cluster is None)
+    out["candidate"] = candidate
+
+    # ★신뢰도 — 임계값에서 멀수록 고신뢰(확실히 높음/낮음), 근처면 저신뢰(애매). 점수-라벨 역전 방지.
+    margin = load_infer_config()["cluster"]["confidence_margin"]
+    out["confidence"] = "저신뢰" if idx is None else _confidence(float(ctx.scores[idx]), ctx.thr, margin)
+
+    # ⑥ 환경 점수 — ★candidate 무관 항상 산출. 백분위는 raw 점수 순위(§B-2), 보정확률은 메타로 전달.
+    if idx is not None:
         out["stages"]["예언_환경점수"] = _stage(
-            score_feasibility, float(ctx.calibrated[idx]), ctx.calibrated)
+            score_feasibility, float(ctx.scores[idx]), ctx.scores,
+            calibrated_prob=float(ctx.calibrated[idx]))
+    else:
+        out["stages"]["예언_환경점수"] = {"status": "na", "reason": "그래프 노드 외 — 환경 점수 산출 불가"}
+
+    # ④ stage1 요건 — 클러스터(여러 필지)가 있어야 룰셋 가능. 없으면 사유 표기(계약 §11-2, "—" 금지)
+    if candidate:
+        out["cluster_size"] = len(cluster)
+        out["stages"]["진단_요건"] = _stage(score_cluster, cluster, ctx.parcels, ctx.buildings)
+    else:
+        out["note"] = f"이 필지는 재개발 환경 후보 클러스터에 속하지 않음({out['confidence']}) — 시세 맥락만 제공."
+        out["stages"]["진단_요건"] = {
+            "status": "na", "reason": "후보 군집 미형성 — 단일 필지로 요건 판정 불가"}
 
     # ⑤ avm 시세 맥락(후보 여부 무관 — 진단)
     if pnu in ctx.target.index:
@@ -161,16 +209,19 @@ def run(address: str, ctx: Context, *, property_type: str | None = None, stage: 
     else:
         out["stages"]["진단_시세맥락"] = {"status": "skipped", "reason": "반경 내 거래 0(타깃 결측)"}
 
-    # ⑦ eligibility 진입(물건유형·단계 입력 있을 때)
+    # ⑦ eligibility 진입(물건유형 입력 시). ★stage 기본값 누수 차단(계약 §11-3): stage 그대로 전달,
+    #    잔여기간은 후보 구역일 때만(in_zone=candidate). 토허는 현재 사실이라 구역 무관 산출.
     if property_type:
         out["stages"]["진입_eligibility"] = _stage(
-            score_eligibility, property_type, stage or "조합설립인가")
+            score_eligibility, property_type, stage, in_zone=candidate)
 
     out["caveats"] = [
         "v1 후보경계는 거친 필터(코어 ~39% 포착) — 정밀 경계 아님(R13).",
         "B1 점수는 '재개발 환경 유사도'(노후도 주도), 지정·추진과 강하게 정렬되진 않음(R4·R18).",
+        "보존지구·상업지역 등은 점수가 높아도 정비 대상이 아닐 수 있음 — 용도지역 미반영(D-2 수검).",
         "모든 수치 추정·참고치이며 투자 권유 아님(R15).",
     ]
+    out["verdict"] = _verdict(out)         # ★결정론 한 문장 결론 + 행동분류(계약 §11-6, 규칙4: LLM 아님)
 
     # ⑨ 종합 리포트 — ★opt-in(LLM 호출, 한도·속도). retrieval(유사구역)+social(사회신호)+report.
     if with_report:

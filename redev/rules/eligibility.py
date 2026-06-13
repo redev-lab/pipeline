@@ -40,8 +40,17 @@ def toheo_status(property_type: str, *, danji_qualified: bool = False, cfg=None)
     }
 
 
-def stage_remaining(stage: str, *, cfg=None) -> dict:
-    """★예언(미래 추정): 정비사업 단계 → 잔여기간 범위. 단정 금지, 외생변수 천장(§6·R18)."""
+def stage_remaining(stage: str | None, *, in_zone: bool = True, cfg=None) -> dict:
+    """★예언(미래 추정): 정비사업 단계 → 잔여기간 범위. 단정 금지, 외생변수 천장(§6·R18).
+
+    ★계약 v1.1(report.md §11-3): 잔여기간은 *후보 구역*이고 *단계가 입력*됐을 때만 산출한다.
+    - in_zone=False(후보 군집 아님): "해당 구역 아님 — 사업 단계 없음"(단계 기본값 누수 차단).
+    - stage=None(단계 미입력): 추정하지 않음(기본값을 실재 단계로 둔갑시키지 않는다).
+    """
+    if not in_zone:
+        return {"stage": None, "known": False, "note": "해당 구역 아님 — 사업 단계 없음"}
+    if not stage:
+        return {"stage": None, "known": False, "note": "사업 단계 미입력 — 잔여기간 추정 안 함"}
     tbl = (cfg or load_eligibility_config())["stage_remaining_years"]
     r = tbl.get(stage)
     if r is None:
@@ -53,11 +62,16 @@ def stage_remaining(stage: str, *, cfg=None) -> dict:
     }
 
 
-def score_eligibility(property_type: str, stage: str, *, danji_qualified: bool = False, cfg=None) -> dict:
-    """진단(토허)+예언(잔여기간) 분리 출력. 추정을 사실로 오해하지 않게 라벨 분리(§6)."""
+def score_eligibility(property_type: str, stage: str | None, *, in_zone: bool = True,
+                      danji_qualified: bool = False, cfg=None) -> dict:
+    """진단(토허)+예언(잔여기간) 분리 출력. 추정을 사실로 오해하지 않게 라벨 분리(§6).
+
+    토허는 현재 사실(물건유형 분기)이라 구역 여부와 무관하게 산출. 잔여기간은 후보 구역 +
+    단계 입력일 때만(report.md §11-3 단계 기본값 누수 차단).
+    """
     cfg = cfg or load_eligibility_config()
     return {
         "진단_토허": toheo_status(property_type, danji_qualified=danji_qualified, cfg=cfg),
-        "예언_잔여기간": stage_remaining(stage, cfg=cfg),
+        "예언_잔여기간": stage_remaining(stage, in_zone=in_zone, cfg=cfg),
         "note": "진단(현재 사실)과 예언(미래 추정)을 분리한다 — 추정을 사실로 읽지 말 것(§6).",
     }

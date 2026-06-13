@@ -4,7 +4,17 @@
 """
 import numpy as np
 
-from redev.retrieval.case_search import _FEATURES, ZoneVectors, _normalize, cosine_topk
+from redev.retrieval.case_search import (
+    _FEATURES, ZoneVectors, _normalize, _zone_display_name, cosine_topk,
+)
+
+
+def test_zone_display_name_from_modal_dong():     # §B-3 표시명 — 원시코드 대신
+    pnu2dong = {"p1": "서울특별시 동작구 노량진동", "p2": "서울특별시 동작구 노량진동",
+                "p3": "서울특별시 동작구 상도동"}
+    assert _zone_display_name({"p1", "p2", "p3"}, pnu2dong, 2009) == "동작구 노량진동 일대 (2009)"
+    assert _zone_display_name({"p1"}, pnu2dong, None) == "동작구 노량진동 일대"
+    assert _zone_display_name({"x"}, pnu2dong, 2009) is None     # 주소 없으면 None(폴백→zone_id)
 
 
 def test_normalize_unit_norm():

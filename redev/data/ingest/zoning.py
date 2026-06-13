@@ -14,10 +14,11 @@ import pandas as pd
 from pyogrio import read_dataframe
 
 from redev.config import load_features_config
+from redev.paths import DATA
 
 _ZIP = "도시구역 국토계획 전부.zip"
 _SHP = "AL_D124_00_20260609.shp"
-_RAW = "_data/raw/추가데이터"
+_RAW = str(DATA / "raw/추가데이터")
 
 
 def _vsizip() -> str:

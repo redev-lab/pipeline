@@ -8,8 +8,6 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from pathlib import Path
-
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -17,8 +15,9 @@ from scipy.spatial import cKDTree
 
 from redev.config import load_features_config
 from redev.data.geo import TARGET_CRS
+from redev.paths import DATA
 
-_CSV = Path("_data/raw/추가데이터/서울시 역사마스터 정보.csv")
+_CSV = DATA / "raw/추가데이터/서울시 역사마스터 정보.csv"
 
 
 @lru_cache(maxsize=None)

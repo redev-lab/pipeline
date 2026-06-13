@@ -5,7 +5,16 @@
 import numpy as np
 import pytest
 
-from redev.orchestration.pipeline import Context, _stage, address_to_pnu
+from redev.orchestration.pipeline import Context, _confidence, _stage, address_to_pnu
+
+
+def test_confidence_not_inverted_by_score():
+    """★신뢰도 = 임계값 거리(점수 높낮이 아님). 최하위/최상위=고신뢰, 경계 근처=저신뢰."""
+    thr, margin = 0.618, 0.15
+    assert _confidence(0.058, thr, margin) == "고신뢰"   # 최하위 = 확실히 아님(역전 버그 수정)
+    assert _confidence(0.99, thr, margin) == "고신뢰"    # 최상위 = 확실히 후보환경
+    assert _confidence(0.65, thr, margin) == "저신뢰"    # 임계값 바로 위 = 애매
+    assert _confidence(0.55, thr, margin) == "저신뢰"    # 임계값 바로 아래 = 애매
 
 
 def _ctx():

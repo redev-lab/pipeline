@@ -1,0 +1,19 @@
+# pyproject.toml — redev 패키지 메타(최소). 목적: 형제 레포(backend)가
+# `pip install -e ../pipeline`로 redev를 editable 설치할 수 있게 한다.
+# ★의존성은 requirements.txt를 단일 출처로 유지(dynamic file 참조) — 여기 중복 안 함.
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "redev"
+version = "0.1.0"
+description = "재개발 투자 판단 시스템 — 심장1(GNN 구역분할)·심장2(AVM) + 룰셋·LLM 종합"
+requires-python = ">=3.12"
+dynamic = ["dependencies"]                       # ↓ requirements.txt에서 읽음(주석/인라인 자동 제거)
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+include = ["redev*"]                              # redev 패키지 트리만(scripts·tests·docs 제외)
