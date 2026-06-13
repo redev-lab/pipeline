@@ -7,7 +7,7 @@ from redev.llm.report import (
 )
 
 _DATA = {
-    "candidate": True, "b1_score": 0.94,
+    "candidate": True, "b1_score": 0.94, "confidence": "고신뢰",
     "stages": {
         "예언_환경점수": {"status": "ok", "result": {"label": "재개발 환경 점수", "rank_top_pct": 77.3, "rank_phrase": "하위 22.7%", "caveats": ["환경점수 caveat"]}},
         "진단_요건": {"status": "ok", "result": {"path": "재개발", "metrics": {"old_area_ratio": 0.94, "abut_ratio": 0.5}}},
@@ -55,7 +55,7 @@ def test_generate_report_llm_and_fallback():
 
 # candidate=False인데 점수 높은 비후보 케이스(예언_환경점수는 항상 산출)
 _NONCAND = {
-    "candidate": False, "b1_score": 0.92,
+    "candidate": False, "b1_score": 0.92, "confidence": "고신뢰",
     "verdict": {"class": "관심 권역(후보 경계 밖)",
                 "headline": "환경 점수 상위 8.0%이나 후보 군집 미포함 — 현 시점 관망 권역. 단정 아님."},
     "stages": {
@@ -75,6 +75,19 @@ def test_facts_always_filled_no_dash():           # 결함 2
     assert "산출 불가" in f["요건판정"]            # "—" 아님, 사유로
     assert f["환경점수"].startswith("재개발 환경 점수 상위")
     assert f.get("결론")                            # 결함 6: 결론 머리문장
+
+
+def test_judgment_label_uses_confidence_not_hardcoded():  # 신뢰도 역전 수정
+    f = _display_facts(_NONCAND)                    # confidence=고신뢰(점수 명확)
+    assert f["판정"] == "후보 클러스터 아님(고신뢰)"   # 하드코딩 '(저신뢰)' 제거
+    fc = _display_facts({**_NONCAND, "confidence": "저신뢰"})
+    assert fc["판정"] == "후보 클러스터 아님(저신뢰)"
+
+
+def test_report_returns_translated_caveats_user():  # 패널용 번역 caveat 노출
+    out = generate_report(_NONCAND, complete_fn=lambda s, u: "ok")
+    assert out["caveats_user"] and all("R1" not in c and "§" not in c for c in out["caveats_user"])
+    assert any("투자 권유가 아니라" in c for c in out["caveats_user"])
 
 
 def test_noncandidate_contradiction_explained():  # 결함 1

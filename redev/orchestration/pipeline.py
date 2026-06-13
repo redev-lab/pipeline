@@ -112,6 +112,15 @@ def address_to_pnu(address: str, ctx: Context) -> str:
     return pnu
 
 
+def _confidence(score: float, thr: float, margin: float) -> str:
+    """★신뢰도 — 운영임계값에서 margin 이상 떨어지면 '고신뢰'(확실히 높음/낮음), 근처면 '저신뢰'(애매).
+
+    점수 최하위(0.058)가 '저신뢰'로 역전되던 버그 수정: 신뢰도는 '점수 높낮이'가 아니라
+    '경계에서의 거리'다. 극단값일수록 분류가 확실 → 고신뢰.
+    """
+    return "고신뢰" if abs(score - thr) >= margin else "저신뢰"
+
+
 def _stage(fn, *a, **k):
     """단계 try/except 래퍼 — 부분 실패도 전체 안 죽임. (status, value)."""
     try:
@@ -148,6 +157,7 @@ def _verdict(out: dict) -> dict:
 def run(address: str, ctx: Context, *, property_type: str | None = None, stage: str | None = None,
         with_report: bool = False) -> dict:
     """주소 → 종합 판단(진단/예언 분리 + caveats). §8 직선 + 저신뢰 폴백 if + ⑨ 리포트(opt-in)."""
+    from redev.config import load_infer_config
     from redev.models.avm import market_context
     from redev.models.feasibility import score_feasibility
     from redev.rules.eligibility import score_eligibility
@@ -169,6 +179,10 @@ def run(address: str, ctx: Context, *, property_type: str | None = None, stage: 
     candidate = not (idx is None or ctx.scores[idx] < ctx.thr or cluster is None)
     out["candidate"] = candidate
 
+    # ★신뢰도 — 임계값에서 멀수록 고신뢰(확실히 높음/낮음), 근처면 저신뢰(애매). 점수-라벨 역전 방지.
+    margin = load_infer_config()["cluster"]["confidence_margin"]
+    out["confidence"] = "저신뢰" if idx is None else _confidence(float(ctx.scores[idx]), ctx.thr, margin)
+
     # ⑥ 환경 점수 — ★candidate 무관 항상 산출. 백분위는 raw 점수 순위(§B-2), 보정확률은 메타로 전달.
     if idx is not None:
         out["stages"]["예언_환경점수"] = _stage(
@@ -182,7 +196,7 @@ def run(address: str, ctx: Context, *, property_type: str | None = None, stage: 
         out["cluster_size"] = len(cluster)
         out["stages"]["진단_요건"] = _stage(score_cluster, cluster, ctx.parcels, ctx.buildings)
     else:
-        out["note"] = "이 필지는 재개발 환경 후보 클러스터에 속하지 않음(저신뢰) — 시세 맥락만 제공."
+        out["note"] = f"이 필지는 재개발 환경 후보 클러스터에 속하지 않음({out['confidence']}) — 시세 맥락만 제공."
         out["stages"]["진단_요건"] = {
             "status": "na", "reason": "후보 군집 미형성 — 단일 필지로 요건 판정 불가"}
 

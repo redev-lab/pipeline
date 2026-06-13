@@ -29,11 +29,14 @@ for name, pnu in cases:
     r = report(pnu, ctx, property_type="다세대", stage="사업시행인가")
     rep = r.get("report", {}); h = rep.get("hallucination", {}); txt = rep.get("report_text", "")
     fe = (r["stages"].get("예언_환경점수", {}) or {}).get("result") or {}
+    phrase = fe.get("rank_phrase")
+    cav_u = (r.get("report") or {}).get("caveats_user") or []
+    panel_codes = [c for c in ("R15", "R13", "R4", "§", "★") if any(c in x for x in cav_u)]
     print("\n" + "=" * 78)
-    print(f"{name}  PNU…{pnu[-8:]}  candidate={r.get('candidate')}  raw={r.get('b1_score')}")
-    print(f"  rank_phrase={fe.get('rank_phrase')} (calibrated_meta={fe.get('calibrated_prob')})")
+    print(f"{name}  PNU…{pnu[-8:]}  candidate={r.get('candidate')}  raw={r.get('b1_score')}  신뢰도={r.get('confidence')}")
+    print(f"  헤더 환경점수(=rank_phrase)='{phrase}' / 본문 결론 phrase 일치={phrase in txt}")
     print(f"  verdict={r.get('verdict', {}).get('class')} | 환각 ok={h.get('ok')} 불일치={h.get('unmatched')}")
-    print(f"  내부코드잔존={[c for c in ('R15','R13','§','★','NTC','D-2') if c in txt] or '없음'}")
+    print(f"  본문 내부코드={[c for c in ('R15','R13','§','★','NTC') if c in txt] or '없음'} | 패널 내부코드={panel_codes or '없음'}")
     print("-" * 78)
     print(txt)
 print("\nDONE")

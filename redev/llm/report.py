@@ -25,7 +25,9 @@ def _display_facts(data: dict) -> dict:
     v = data.get("verdict") or {}
     if v.get("headline"):
         f["결론"] = v["headline"]                          # ⑥ 맨 위 한 문장 결론(결정론)
-    f["판정"] = "후보 클러스터 속함" if cand else "후보 클러스터 아님(저신뢰)"
+    conf = data.get("confidence")                          # ★신뢰도(점수-라벨 역전 방지)
+    tag = f"({conf})" if conf else ""
+    f["판정"] = f"후보 클러스터 {'속함' if cand else '아님'}{tag}"
     if data.get("b1_score") is not None:
         f["환경유사도점수"] = f"{data['b1_score']}"
 
@@ -209,10 +211,10 @@ def generate_report(data: dict, *, complete_fn=None) -> dict:
             text = complete_fn(_SYSTEM, user)
             return {"report_text": text, "source": "llm",
                     "hallucination": verify_numbers(text, facts, user_cav),
-                    "caveats_internal": internal}
+                    "caveats_user": user_cav, "caveats_internal": internal}
         except Exception as e:
             data = {**data, "_llm_error": str(e)[:80]}
     text = _template_report(facts, user_cav)
     return {"report_text": text, "source": "template",
             "hallucination": verify_numbers(text, facts, user_cav),
-            "caveats_internal": internal}
+            "caveats_user": user_cav, "caveats_internal": internal}
