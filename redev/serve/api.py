@@ -77,10 +77,14 @@ def load_serve_context(*, rebuild: bool = False, log=print):
         log(f"[ctx] 직렬화 로드 {_CTX_CACHE.stat().st_size/1e6:.0f}MB ({time.time()-t:.0f}s)")
         return ctx
     ctx = build_serve_context(log=log)
-    _CTX_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    with open(_CTX_CACHE, "wb") as f:
-        pickle.dump(ctx, f, protocol=pickle.HIGHEST_PROTOCOL)
-    log(f"[ctx] 직렬화 저장 {_CTX_CACHE.stat().st_size/1e6:.0f}MB")
+    try:                                                   # ★저장 실패(메모리 등)는 비치명 — 빌드된 ctx로 기동
+        _CTX_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        with open(_CTX_CACHE, "wb") as f:
+            pickle.dump(ctx, f, protocol=pickle.HIGHEST_PROTOCOL)
+        log(f"[ctx] 직렬화 저장 {_CTX_CACHE.stat().st_size/1e6:.0f}MB")
+    except (MemoryError, OSError) as e:
+        log(f"[ctx] 직렬화 저장 생략(비치명: {type(e).__name__}) — 빌드 ctx로 기동")
+        _CTX_CACHE.unlink(missing_ok=True)                 # 손상 파일 제거
     return ctx
 
 
