@@ -38,7 +38,10 @@ def _retry_delay(msg: str):
 
 
 def _is_transient(msg: str) -> bool:
-    return any(t in msg for t in ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE", "500", "INTERNAL"))
+    # 한도(429)·서버오류(5xx) + ★네트워크 끊김/타임아웃(RemoteProtocolError 등) — 일시적이라 재시도.
+    return any(t in msg for t in ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE", "500", "INTERNAL",
+                                  "disconnect", "RemoteProtocol", "ConnectionError", "ConnectError",
+                                  "timeout", "timed out", "ReadError", "Temporary"))
 
 
 def complete(system: str, user: str, *, temperature: float | None = None, cfg=None) -> str:
