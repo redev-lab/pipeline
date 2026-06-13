@@ -112,6 +112,13 @@ def test_user_caveats_strip_internal_codes():     # 결함 4
     assert "투자 권유가 아니라" in blob
 
 
+def test_d2_preservation_caveat_translated():     # D-2 유형 밖(보존·상업) 경고
+    internal = ["보존지구·상업지역 등은 점수가 높아도 정비 대상이 아닐 수 있음 — 용도지역 미반영(D-2 수검)."]
+    uc = _user_caveats(internal)
+    assert len(uc) == 1 and "보존지구" in uc[0] and "재개발 대상이 아닐" in uc[0]
+    assert "D-2" not in uc[0] and "수검" not in uc[0]      # 내부코드 D-2·'수검' 제거
+
+
 def test_noncandidate_report_hallucination_zero():  # 결함 5·6 통합(환각 0 유지)
     rep = generate_report(_NONCAND, complete_fn=lambda s, u: _template_report(
         _display_facts(_NONCAND), _user_caveats(_NONCAND["caveats"])))
