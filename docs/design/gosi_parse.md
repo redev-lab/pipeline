@@ -32,7 +32,7 @@ zone 단위로 ZoneTable·retrieval 벡터에 합류시키고 리포트 "얼마"
 
 **제안 순서(측정 먼저·de-risk)**:
 1. **수동 표본 5구역**(§5 손대조 대상과 동일): 토지이음/정보몽땅에서 본문을 손으로 받아
-   `_data/raw/gosi_body/<고시번호>.{pdf,hwp,txt}`로 둔다. → 파서+StructVerify가 *실제 본문에서*
+   `_data/raw/gosi_body/<고시번호>.{pdf,hwp,txt}`로 둔다. → 파서+고시문 추출 검증가 *실제 본문에서*
    동작하는지 먼저 증명.
 2. 표본에서 추출·검증 통과율이 충분하면 → **벌크 입수 자동화** 결정(스크래핑 ToS 검토 vs 수동 다운로드).
    소스 추상화(§11 철학): 입수기 `gosi_fetch`는 (고시번호)→(본문 텍스트)만 책임, 소스 교체 가능.
@@ -47,7 +47,7 @@ zone 단위로 ZoneTable·retrieval 벡터에 합류시키고 리포트 "얼마"
 - LLM 역할: 본문에서 **추출만**. 없으면 `"미기재"`(추정·창작 금지). 표/문장 어디에 있든 원문 표기 그대로.
 - 숫자 정규화는 결정론 코드(파이프라인)가: "250퍼센트"·"250%"·"250.0" → 표시문자열 고정.
 
-## 4. ★StructVerify (검증이 핵심 — 환각 0 기법 그대로)
+## 4. ★고시문 추출 검증 (검증이 핵심 — 이 리포트 환각검증 기법 재사용, 별개 코드)
 
 1. **verbatim diff**: 추출한 각 수치 토큰이 본문 원문에 **글자 그대로 존재**하는지 대조
    (llm/report.py `verify_numbers`와 동일 기법). 원문에 없는 숫자 = **불합격**(드롭+로그).
@@ -67,7 +67,7 @@ zone 단위로 ZoneTable·retrieval 벡터에 합류시키고 리포트 "얼마"
 ```text
 data/ingest/gosi_body.py   # 고시번호 → 본문 텍스트(소스 추상화: 토지이음/정보몽땅/수동파일). PDF·HWP→text.
 nlp/gosi_extract.py        # 본문 → 구조화 추출(LLM, 미기재 허용) + 정규화(결정론)
-nlp/gosi_verify.py         # ★StructVerify: verbatim diff + 범위 가드 + 출처 보존 → 등급
+nlp/gosi_verify.py         # ★고시문 추출 검증: verbatim diff + 범위 가드 + 출처 보존 → 등급
 data/zone_attrs.py         # zone별 추출값 병합 → ZoneTable 컬럼(verified만)
   (retrieval/case_search.py·llm/report.py·orchestration/pipeline.py 에 합류)
 ```
