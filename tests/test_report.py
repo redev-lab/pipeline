@@ -3,8 +3,17 @@
 실행: python -m pytest tests/test_report.py
 """
 from redev.llm.report import (
-    _display_facts, _template_report, _user_caveats, generate_report, verify_numbers,
+    _attr_display, _display_facts, _template_report, _user_caveats, generate_report, verify_numbers,
 )
+
+
+def test_attr_display_units():                    # §5-1 계획정보 단위 표시
+    assert _attr_display("구역면적", "187,669.0") == "187,669㎡"   # ㎡ 부착 + 불필요 .0 제거
+    assert _attr_display("건폐율", "30이하") == "30% 이하"          # % 부착, '이하' 보존
+    assert _attr_display("용적률", "231.54%") == "231.54%"          # 이미 % → 원형
+    assert _attr_display("용적률", "599.96") == "599.96%"           # % 부착
+    assert _attr_display("계획세대수", "3,317세대") == "3,317세대"   # 이미 세대 → 원형
+    assert _attr_display("구역면적", "83,949.57") == "83,949.57㎡"   # 유효 소수 보존
 
 _DATA = {
     "candidate": True, "b1_score": 0.94, "confidence": "고신뢰",
@@ -117,8 +126,8 @@ def test_plan_info_verified_flagged_and_latest_flag():  # §5 계획정보 표�
                   "계획세대수": {"value": 1012, "raw": "1,012세대", "label": "건립예정세대수", "grade": "verified"},
                   "건폐율": {"value": 52.26, "raw": "52.26", "label": "건폐율", "grade": "flagged"}}}}}}
     f = _display_facts(d)
-    assert "용적률 599.96" in f["계획정보"] and "계획세대수 1,012세대" in f["계획정보"]
-    assert "건폐율 52.26(잠정)" in f["계획정보"]              # ★flagged → 잠정(단정 금지)
+    assert "용적률 599.96%" in f["계획정보"] and "계획세대수 1,012세대" in f["계획정보"]
+    assert "건폐율 52.26%(잠정)" in f["계획정보"]             # ★flagged → 잠정(단정 금지) + 단위
     assert "서울고시 2025-426 기준, 후속 변경 미반영" in f["계획정보"]   # ★출처 + 최신 플래그
     # 환각검증: 계획정보 숫자가 표시값에 있어 리포트 인용 시 통과
     assert verify_numbers("용적률 599.96, 1,012세대 (서울고시 2025-426 기준)", f)["ok"]

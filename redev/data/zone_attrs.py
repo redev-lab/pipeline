@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from redev.paths import DATA
 
@@ -57,3 +58,51 @@ def load_zone_attrs() -> dict:
     if not _CACHE.exists():
         return {}
     return json.loads(_CACHE.read_text(encoding="utf-8"))
+
+
+_SUFFIX = re.compile(r"(주택재개발|주택재건축|도시환경|주택정비형|재정비촉진|재개발|재건축|정비사업|정비형|구역|뉴타운)")
+
+
+def norm_zone_name(name: str) -> str:
+    """구역명 정규화 — 표기 흔들림 흡수. '가리봉제1구역'·'가리봉1구역'·'가리봉 제1구역' → '가리봉1'.
+
+    제N→N, 사업·구역 접미사 제거, 공백 제거. 무매칭이 오매칭보다 안전하므로 과도 일반화는 피함.
+    """
+    if not name:
+        return ""
+    s = re.sub(r"\s+", "", str(name))
+    s = re.sub(r"제(\d)", r"\1", s)          # 제1 → 1 (제기동 등은 숫자 앞 '제'만)
+    s = _SUFFIX.sub("", s)
+    return s
+
+
+def resolve_to_context(store: dict, ctx_zone_ids, title_map: dict) -> dict:
+    """★고시-키 스토어를 *컨텍스트 zone_id*로 재매핑(강건 매칭). 의제처리 NTFC_SN ≠ 고시관리코드 흡수.
+
+    1차 직접: 고시관리코드(스토어 키)가 컨텍스트 zone_id면 그대로(고신뢰).
+    2차 구역명: 정규화 구역명이 컨텍스트 zone의 제목에 유일 포함 → 매칭(중신뢰, 자치구 일치 가드).
+    다중후보·무매칭 → 연결 안 함(flagged, 사람 확인). ★오매칭보다 무매칭이 안전.
+    반환: {context_zone_id: {...attrs, match:{confidence, method, gosi_zone_id}}}, unmatched 리스트는 로그.
+    """
+    ctx_ids = set(ctx_zone_ids)
+    ctx_norm = {zid: norm_zone_name(_zone_name_from_title(title_map.get(zid, ""))) for zid in ctx_ids}
+    resolved, unmatched = {}, []
+    for gosi_zid, entry in store.items():
+        if gosi_zid in ctx_ids:                                   # 1차 직접
+            resolved[gosi_zid] = {**entry, "match": {"confidence": "고", "method": "고시관리코드 일치", "gosi_zone_id": gosi_zid}}
+            continue
+        n = norm_zone_name(entry.get("zone_name", ""))
+        gu = gosi_zid[:5]
+        cands = [zid for zid in ctx_ids if n and zid[:5] == gu and n == ctx_norm.get(zid)]   # 구역명+자치구
+        if len(cands) == 1:                                       # 2차 구역명(유일)
+            resolved[cands[0]] = {**entry, "match": {"confidence": "중", "method": "구역명 정규화", "gosi_zone_id": gosi_zid}}
+        else:
+            unmatched.append({"gosi_zone_id": gosi_zid, "zone_name": entry.get("zone_name"),
+                              "reason": "다중후보" if len(cands) > 1 else "무매칭", "n_cands": len(cands)})
+    return {"resolved": resolved, "unmatched": unmatched}
+
+
+def _zone_name_from_title(title: str) -> str:
+    """고시 제목에서 구역명 토큰 추출(정규화 입력용). 제목에 'XX제N구역'/'XXN구역' 패턴이 흔함."""
+    m = re.search(r"([가-힣]+제?\d+구역)", title or "")
+    return m.group(1) if m else (title or "")

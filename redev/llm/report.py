@@ -71,7 +71,7 @@ def _display_facts(data: dict) -> dict:
             it = pi["attrs"].get(a)
             if it:
                 tag = "" if it.get("grade") == "verified" else "(잠정)"
-                parts.append(f"{a} {it['raw']}{tag}")
+                parts.append(f"{a} {_attr_display(a, it['raw'])}{tag}")
         if parts:
             src = f"서울고시 {pi['고시번호']} 기준"
             if pi.get("flags"):
@@ -120,6 +120,28 @@ def _user_caveats(internal: list) -> list:
         if sentence not in out and any(any(k in c for k in keys) for c in internal):
             out.append(sentence)
     return out
+
+
+_UNIT = {"용적률": "%", "건폐율": "%", "구역면적": "㎡", "계획세대수": "세대"}
+
+
+def _attr_display(attr: str, raw: str) -> str:
+    """계획정보 표시 — 속성 단위 부착(면적 ㎡·건폐율 % 등). 이미 단위 있으면 원형 유지.
+
+    예: '30이하'(건폐율)→'30% 이하', '187,669.0'(면적)→'187,669㎡', '231.54%'→그대로.
+    숫자 자릿값은 보존(환각검증 — 계획정보 표시값이 곧 허용 원천이라 self-allowed).
+    """
+    u = _UNIT.get(attr, "")
+    s = (raw or "").strip()
+    if u and u in s:                                      # 이미 단위(% ㎡ 세대) 있으면 그대로
+        return s
+    m = re.match(r"\s*([\d,]+(?:\.\d+)?)(.*)$", s)
+    if not m:
+        return s
+    num, rest = m.group(1), m.group(2).strip()
+    if attr == "구역면적" and "." in num:                  # 187,669.0 → 187,669 (불필요 소수 제거)
+        num = num.rstrip("0").rstrip(".")
+    return f"{num}{u}" + (f" {rest}" if rest else "")
 
 
 def _pct(x):
