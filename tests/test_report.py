@@ -87,10 +87,17 @@ def test_facts_always_filled_no_dash():           # 결함 2
 
 
 def test_judgment_label_uses_confidence_not_hardcoded():  # 신뢰도 역전 수정
-    f = _display_facts(_NONCAND)                    # confidence=고신뢰(점수 명확)
-    assert f["판정"] == "후보 클러스터 아님(고신뢰)"   # 하드코딩 '(저신뢰)' 제거
+    f = _display_facts(_NONCAND)                    # confidence=고신뢰(점수 명확), candidate=False
+    assert f["판정"] == "환경 유사 군집 아님(고신뢰)"   # 하드코딩 '(저신뢰)' 제거
     fc = _display_facts({**_NONCAND, "confidence": "저신뢰"})
-    assert fc["판정"] == "후보 클러스터 아님(저신뢰)"
+    assert fc["판정"] == "환경 유사 군집 아님(저신뢰)"
+
+
+def test_judgment_in_zone_vs_candidate_no_misread():  # §defect 2 — '지정' 오독 차단
+    cand = _display_facts(_DATA)                     # candidate=True, in_zone 없음
+    assert cand["판정"] == "환경 유사 군집 속함 — 지정 아님(고신뢰)"   # '지정 아님' 명시
+    desig = _display_facts({**_DATA, "in_zone": True})
+    assert desig["판정"] == "지정 정비구역 + 환경 후보(고신뢰)"        # 실제 지정구역만 '지정'
 
 
 def test_report_returns_translated_caveats_user():  # 패널용 번역 caveat 노출

@@ -48,7 +48,7 @@ def stage_remaining(stage: str | None, *, in_zone: bool = True, cfg=None) -> dic
     - stage=None(단계 미입력): 추정하지 않음(기본값을 실재 단계로 둔갑시키지 않는다).
     """
     if not in_zone:
-        return {"stage": None, "known": False, "note": "해당 구역 아님 — 사업 단계 없음"}
+        return {"stage": None, "known": False, "note": "지정·추진 구역 아님 — 사업 단계 없음"}
     if not stage:
         return {"stage": None, "known": False, "note": "사업 단계 미입력 — 잔여기간 추정 안 함"}
     tbl = (cfg or load_eligibility_config())["stage_remaining_years"]

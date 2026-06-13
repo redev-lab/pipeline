@@ -27,7 +27,13 @@ def _display_facts(data: dict) -> dict:
         f["결론"] = v["headline"]                          # ⑥ 맨 위 한 문장 결론(결정론)
     conf = data.get("confidence")                          # ★신뢰도(점수-라벨 역전 방지)
     tag = f"({conf})" if conf else ""
-    f["판정"] = f"후보 클러스터 {'속함' if cand else '아님'}{tag}"
+    # ★in_zone(실제 지정구역) ≠ cand(환경 유사 군집) — '지정됨' 오독 차단(§defect 2)
+    if data.get("in_zone"):
+        f["판정"] = f"지정 정비구역 + 환경 후보{tag}"
+    elif cand:
+        f["판정"] = f"환경 유사 군집 속함 — 지정 아님{tag}"
+    else:
+        f["판정"] = f"환경 유사 군집 아님{tag}"
     if data.get("b1_score") is not None:
         f["환경유사도점수"] = f"{data['b1_score']}"
 
