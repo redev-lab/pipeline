@@ -55,7 +55,7 @@ def load_index(csv_path) -> pd.DataFrame:
 def _name_core(s) -> str:
     """구역명/고시명에서 매칭 토큰 추출 — '불광제5'→'불광5', '고척동253번지'→'고척동253', '장위15구역'→'장위15'.
     한글(2+)+옵션'제'+숫자 첫 출현. 표기 흔들림(제N·동N번지·N구역) 흡수."""
-    m = re.search(r"([가-힣]{2,})제?\s*(\d+)\s*구역", str(s or "")) or re.search(r"([가-힣]{2,})제?\s*(\d+)", str(s or ""))
+    m = re.search(r"([가-힣]{2,}?)제?\s*(\d+)\s*구역", str(s or "")) or re.search(r"([가-힣]{2,}?)제?\s*(\d+)", str(s or ""))
     return (m.group(1) + m.group(2)) if m else ""
 
 
