@@ -76,7 +76,9 @@ def _display_facts(data: dict) -> dict:
         for a in ["용적률", "계획세대수", "구역면적", "건폐율"]:
             it = pi["attrs"].get(a)
             if it:
-                tag = "" if it.get("grade") == "verified" else "(잠정)"
+                g = it.get("grade")
+                # verified·manual_verified=단정 / ocr_검토필요=OCR 잠정 / flagged=잠정
+                tag = "" if g in ("verified", "manual_verified") else "(OCR 잠정)" if g == "ocr_검토필요" else "(잠정)"
                 parts.append(f"{a} {_attr_display(a, it['raw'])}{tag}")
         if parts:
             src = f"서울고시 {pi['고시번호']} 기준"

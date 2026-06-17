@@ -37,6 +37,8 @@ SAMPLES = [
      "file": "서울특별시_제2025-245호_고시.pdf", "flags": []},
     {"zone_id": "11380NTC202411130006", "zone": "불광8구역", "고시번호": "2024-484", "고시일자": "2024-10-17",
      "file": "서울특별시_제2024-484호_고시.pdf", "flags": []},
+    # ★성북1(2024-475)·불광5(2025-163)는 스캔 PDF — OCR 느림·오인식 위험으로 ★수동 입력 경로(set_manual).
+    #   OCR 코드(gosi_body._ocr_pdf)는 전역 확장 대비 보존, 지금은 미사용.
 ]
 
 
@@ -53,14 +55,14 @@ def build_zone_attrs(*, complete_fn=None, samples=None, merge: bool = True) -> d
     for s in (samples or SAMPLES):
         if merge and s["zone_id"] in store:                  # 이미 추출됨 → 건너뜀(LLM 절약)
             continue
-        g = read_gosi(_DIR / s["file"])
+        g = read_gosi(_DIR / s["file"], ocr=True)            # ★스캔본은 OCR(잠정 등급)
         ex = extract_attrs(g["text"], zone_name=s["zone"], 고시번호=s["고시번호"],
                            고시일자=s["고시일자"], complete_fn=complete_fn)
-        vr = verify_extraction(ex, g["text"], table_rows=g["rows"], grids=g["grids"])
+        vr = verify_extraction(ex, g["text"], table_rows=g["rows"], grids=g["grids"], source=g["source"])
         attrs = {}
         for a in ATTRS:
             r = vr["results"][a]
-            if r["grade"] in ("verified", "flagged"):        # missing/rejected는 스토어 제외
+            if r["grade"] in ("verified", "flagged", "ocr_검토필요"):   # missing/rejected만 제외
                 attrs[a] = {"value": r["value"], "raw": r["raw"], "label": r["label"], "grade": r["grade"]}
         store[s["zone_id"]] = {"zone_name": s["zone"], "고시번호": s["고시번호"], "고시일자": s["고시일자"],
                                "flags": s["flags"], "attrs": attrs}
@@ -74,6 +76,34 @@ def load_zone_attrs() -> dict:
     if not _CACHE.exists():
         return {}
     return json.loads(_CACHE.read_text(encoding="utf-8"))
+
+
+def set_manual(zone_id: str, *, zone_name: str, 고시번호: str, 고시일자: str, flags=(), **attr_raws) -> dict:
+    """★수동 입력 통로 — 사람이 원문(PDF) 직접 대조한 값. 스캔 등 추출 불가 구역용(성북1·불광5 등).
+
+    등급 'manual_verified' = 디지털 verified와 동급 신뢰(사람이 원문 대조). OCR 잠정과 구분.
+    verbatim/OCR 검증 불필요(사람이 봄), ★범위 가드만 적용(입력 오타 방지 — 범위밖이면 flagged).
+    attr_raws: 용적률='250%', 건폐율='30% 이하', 계획세대수='1,234세대', 구역면적='50,000㎡'(원문 표기 그대로).
+    스토어에 병합 저장. 반환: 저장된 엔트리.
+    """
+    from redev.nlp.gosi_verify import RANGES, _value_token
+
+    store = load_zone_attrs()
+    attrs = {}
+    for a in ("용적률", "건폐율", "계획세대수", "구역면적"):
+        raw = attr_raws.get(a)
+        if not raw:
+            continue
+        tok = _value_token(raw)
+        val = float(tok) if tok else None
+        lo, hi = RANGES.get(a, (float("-inf"), float("inf")))
+        grade = "manual_verified" if (val is not None and lo <= val <= hi) else "flagged"  # 범위밖=입력오타 의심
+        attrs[a] = {"value": val, "raw": raw, "label": a, "grade": grade}
+    store[zone_id] = {"zone_name": zone_name, "고시번호": 고시번호, "고시일자": 고시일자,
+                      "flags": list(flags), "attrs": attrs}
+    _CACHE.parent.mkdir(parents=True, exist_ok=True)
+    _CACHE.write_text(json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8")
+    return store[zone_id]
 
 
 _SUFFIX = re.compile(r"(주택재개발|주택재건축|도시환경|주택정비형|재정비촉진|재개발|재건축|정비사업|정비형|구역|뉴타운)")

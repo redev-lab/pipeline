@@ -10,12 +10,12 @@ from __future__ import annotations
 import re
 
 
-def read_gosi(path) -> dict:
-    """PDF → {text, rows}. text=산문+표 셀 직렬화(LLM 입력·숫자 원문대조용), rows=표 셀 행 리스트.
+def read_gosi(path, *, ocr: bool = False) -> dict:
+    """PDF → {text, rows, grids, source}. source=digital|ocr|scan.
 
-    ★표 셀 행(rows): `extract_tables()`로 표를 셀 격자로 뽑아 행마다 `라벨 | 값 | 값`으로 직렬화.
-    검증이 '같은 행에 건폐율 라벨과 그 값이 함께 있나'로 출처를 *결정론으로* 확인(LLM 인용 의존 제거,
-    산문 평탄화로 뭉개진 표 셀의 출처 보류 문제 해결). 스캔본은 text 짧고 rows 빈 리스트.
+    디지털: 텍스트+표 셀(grids로 헤더 컬럼 매칭). ★스캔본(텍스트층 0)은 ocr=True면 이미지 OCR로
+    텍스트 복원(source='ocr', rows/grids 없음) — ★OCR 값은 자동 verified 금지(verify가 'OCR 검토필요'로
+    강등). ocr=False면 source='scan'(빈 텍스트, OCR 미수행).
     """
     import pdfplumber  # PDF 텍스트/표 레이어 파서(스캔 이미지엔 텍스트층이 없어 빈 결과)
 
@@ -33,7 +33,30 @@ def read_gosi(path) -> dict:
     text = _clean("\n".join(prose))
     if rows:
         text += "\n\n[표 셀]\n" + _clean("\n".join(rows))     # LLM·산문대조에도 깨끗한 셀 포함
-    return {"text": text, "rows": rows, "grids": grids}
+
+    if is_scanned(text):                                      # 텍스트층 없음 = 스캔
+        if ocr:
+            return {"text": _ocr_pdf(path), "rows": [], "grids": [], "source": "ocr"}
+        return {"text": text, "rows": [], "grids": [], "source": "scan"}
+    return {"text": text, "rows": rows, "grids": grids, "source": "digital"}
+
+
+def _ocr_pdf(path, *, dpi: int = 300, langs=("ko", "en")) -> str:
+    """스캔 PDF → 이미지 렌더(pypdfium2) → OCR(EasyOCR, 한국어) → 텍스트. ★숫자 오인식 위험 — verify가 잠정 처리.
+
+    dpi 300(숫자 가독), CPU. 첫 호출 시 EasyOCR 모델 다운로드(~100MB). 표 구조는 복원 안 함(산문 텍스트).
+    """
+    import easyocr  # torch 기반 OCR(한국어+영문). 시스템 바이너리 불필요.
+    import numpy as np
+    import pypdfium2 as pdfium
+
+    reader = easyocr.Reader(list(langs), gpu=False)
+    pdf = pdfium.PdfDocument(str(path))
+    lines = []
+    for i in range(len(pdf)):
+        img = pdf[i].render(scale=dpi / 72).to_pil()
+        lines.extend(reader.readtext(np.array(img), detail=0, paragraph=True))   # detail=0: 텍스트만
+    return _clean("\n".join(lines))
 
 
 def extract_text(path) -> str:

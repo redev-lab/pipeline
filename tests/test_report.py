@@ -140,6 +140,18 @@ def test_plan_info_verified_flagged_and_latest_flag():  # §5 계획정보 표�
     assert verify_numbers("용적률 599.96, 1,012세대 (서울고시 2025-426 기준)", f)["ok"]
 
 
+def test_plan_info_grade_tags():                  # manual_verified=단정, OCR=잠정, flagged=잠정
+    d = {**_DATA, "stages": {**_DATA["stages"], "진단_계획정보": {"status": "ok", "result": {
+        "zone_name": "성북1구역", "고시번호": "2024-475", "고시일자": "2024-10-04", "flags": [],
+        "attrs": {"용적률": {"raw": "250%", "label": "용적률", "grade": "manual_verified"},
+                  "건폐율": {"raw": "30%", "label": "건폐율", "grade": "ocr_검토필요"},
+                  "계획세대수": {"raw": "1,234세대", "label": "계획세대수", "grade": "flagged"}}}}}}
+    f = _display_facts(d)
+    assert "용적률 250%" in f["계획정보"] and "용적률 250%(잠정)" not in f["계획정보"]  # manual=단정
+    assert "건폐율 30%(OCR 잠정)" in f["계획정보"]                                      # OCR=잠정
+    assert "계획세대수 1,234세대(잠정)" in f["계획정보"]                                # flagged=잠정
+
+
 def test_similar_case_uses_display_name_not_raw_code():  # §B-3
     d = {**_DATA, "retrieval": {"matches": [
         {"zone_id": "11590NTC202409250002", "display_name": "동작구 노량진동 일대 (2009)",

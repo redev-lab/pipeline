@@ -90,13 +90,20 @@ def verify_attr(attr: str, item, source_text: str, *, 고시번호: str, 고시�
                        "tok_in_sentence": tok_in_sent, "table_provenance": table_prov, "in_range": in_range}}
 
 
-def verify_extraction(extracted: dict, source_text: str, *, table_rows=None, grids=None) -> dict:
-    """추출 dict 전체 검증 → 항목별 등급 + 요약. verified만 표시 채택(호출부)."""
+def verify_extraction(extracted: dict, source_text: str, *, table_rows=None, grids=None,
+                      source: str = "digital") -> dict:
+    """추출 dict 전체 검증 → 항목별 등급 + 요약. verified만 표시 채택(호출부).
+
+    ★source='ocr'이면 검증 통과해도 verified→'ocr_검토필요'로 강등 — OCR 텍스트 자체가 오인식
+    위험(6→8, 0→O)이라 'verbatim 통과'가 정확성을 보장 못 함. 사람 손대조 전까지 잠정.
+    """
     고시번호, 고시일자 = extracted.get("고시번호"), extracted.get("고시일자")
-    results, summary = {}, {"verified": 0, "flagged": 0, "rejected": 0, "missing": 0}
+    results, summary = {}, {"verified": 0, "flagged": 0, "rejected": 0, "missing": 0, "ocr_검토필요": 0}
     for attr, item in (extracted.get("attrs") or {}).items():
         v = verify_attr(attr, item, source_text, 고시번호=고시번호, 고시일자=고시일자,
                         table_rows=table_rows, grids=grids)
+        if source == "ocr" and v["grade"] == "verified":
+            v["grade"] = "ocr_검토필요"                       # ★OCR은 자동 verified 금지(잠정)
         results[attr] = v
         summary[v["grade"]] = summary.get(v["grade"], 0) + 1
     return {"zone_name": extracted.get("zone_name"), "고시번호": 고시번호, "고시일자": 고시일자,
