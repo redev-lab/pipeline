@@ -3,8 +3,17 @@
 실행: python -m pytest tests/test_report.py
 """
 from redev.llm.report import (
-    _display_facts, _template_report, _user_caveats, generate_report, verify_numbers,
+    _attr_display, _display_facts, _template_report, _user_caveats, generate_report, verify_numbers,
 )
+
+
+def test_attr_display_units():                    # §5-1 계획정보 단위 표시
+    assert _attr_display("구역면적", "187,669.0") == "187,669㎡"   # ㎡ 부착 + 불필요 .0 제거
+    assert _attr_display("건폐율", "30이하") == "30% 이하"          # % 부착, '이하' 보존
+    assert _attr_display("용적률", "231.54%") == "231.54%"          # 이미 % → 원형
+    assert _attr_display("용적률", "599.96") == "599.96%"           # % 부착
+    assert _attr_display("계획세대수", "3,317세대") == "3,317세대"   # 이미 세대 → 원형
+    assert _attr_display("구역면적", "83,949.57") == "83,949.57㎡"   # 유효 소수 보존
 
 _DATA = {
     "candidate": True, "b1_score": 0.94, "confidence": "고신뢰",
@@ -19,7 +28,7 @@ _DATA = {
 
 def test_display_facts_preformats_strings():
     f = _display_facts(_DATA)
-    assert f["환경점수"] == "재개발 환경 점수 하위 22.7%"     # §B-1: 77.3%(상위) → 하위 22.7%
+    assert f["환경점수"] == "재개발 환경 점수 하위 22.7%(전 구역 상대순위)"   # §B-1 + 상대순위 명시(포화 오도 차단)
     assert f["노후도"] == "노후·불량 연면적 94%"
     assert "1,658만원" in f["시세맥락"] and "5,446만원" in f["시세맥락"]
 
@@ -78,10 +87,17 @@ def test_facts_always_filled_no_dash():           # 결함 2
 
 
 def test_judgment_label_uses_confidence_not_hardcoded():  # 신뢰도 역전 수정
-    f = _display_facts(_NONCAND)                    # confidence=고신뢰(점수 명확)
-    assert f["판정"] == "후보 클러스터 아님(고신뢰)"   # 하드코딩 '(저신뢰)' 제거
+    f = _display_facts(_NONCAND)                    # confidence=고신뢰(점수 명확), candidate=False
+    assert f["판정"] == "환경 유사 군집 아님(고신뢰)"   # 하드코딩 '(저신뢰)' 제거
     fc = _display_facts({**_NONCAND, "confidence": "저신뢰"})
-    assert fc["판정"] == "후보 클러스터 아님(저신뢰)"
+    assert fc["판정"] == "환경 유사 군집 아님(저신뢰)"
+
+
+def test_judgment_in_zone_vs_candidate_no_misread():  # §defect 2 — '지정' 오독 차단
+    cand = _display_facts(_DATA)                     # candidate=True, in_zone 없음
+    assert cand["판정"] == "환경 유사 군집 속함 — 지정 아님(고신뢰)"   # '지정 아님' 명시
+    desig = _display_facts({**_DATA, "in_zone": True})
+    assert desig["판정"] == "지정 정비구역(고신뢰)"                   # 지정구역은 '지정'이 주 라벨(환경점수 부가)
 
 
 def test_report_returns_translated_caveats_user():  # 패널용 번역 caveat 노출
@@ -100,13 +116,40 @@ def test_low_score_noncandidate_no_contradiction_note():  # 결함 1 경계 — 
            "예언_환경점수": {"status": "ok", "result": {"label": "재개발 환경 점수", "rank_top_pct": 100.0, "rank_phrase": "하위 0.0%"}}}}
     f = _display_facts(low)
     assert "후보판정설명" not in f                  # 점수 낮음 → '대상 아님'이 설명, 모순 문장 없음
-    assert f["환경점수"] == "재개발 환경 점수 하위 0.0%"      # §B-1: 상위 100% → 하위 0.0%(결함2 채움 유지)
+    assert f["환경점수"] == "재개발 환경 점수 하위 0.0%(전 구역 상대순위)"   # §B-1: 상위 100%→하위 0.0%(채움 유지)
 
 
 def test_stage_not_leaked_for_noncandidate():     # 결함 3
     f = _display_facts(_NONCAND)
     assert "잔여기간" not in f                      # 기간·단계 누수 없음
     assert "단계상태" in f and "구역 아님" in f["단계상태"]
+
+
+def test_plan_info_verified_flagged_and_latest_flag():  # §5 계획정보 표시 분기
+    d = {**_DATA, "stages": {**_DATA["stages"], "진단_계획정보": {"status": "ok", "result": {
+        "zone_name": "흑석2구역", "고시번호": "2025-426", "고시일자": "2025-07-31",
+        "flags": ["최신 미반영(서울시 2025-659 변경안 협의중·미입수)"],
+        "attrs": {"용적률": {"value": 599.96, "raw": "599.96", "label": "용적률", "grade": "verified"},
+                  "계획세대수": {"value": 1012, "raw": "1,012세대", "label": "건립예정세대수", "grade": "verified"},
+                  "건폐율": {"value": 52.26, "raw": "52.26", "label": "건폐율", "grade": "flagged"}}}}}}
+    f = _display_facts(d)
+    assert "용적률 599.96%" in f["계획정보"] and "계획세대수 1,012세대" in f["계획정보"]
+    assert "건폐율 52.26%(잠정)" in f["계획정보"]             # ★flagged → 잠정(단정 금지) + 단위
+    assert "서울고시 2025-426 기준, 후속 변경 미반영" in f["계획정보"]   # ★출처 + 최신 플래그
+    # 환각검증: 계획정보 숫자가 표시값에 있어 리포트 인용 시 통과
+    assert verify_numbers("용적률 599.96, 1,012세대 (서울고시 2025-426 기준)", f)["ok"]
+
+
+def test_plan_info_grade_tags():                  # manual_verified=단정, OCR=잠정, flagged=잠정
+    d = {**_DATA, "stages": {**_DATA["stages"], "진단_계획정보": {"status": "ok", "result": {
+        "zone_name": "성북1구역", "고시번호": "2024-475", "고시일자": "2024-10-04", "flags": [],
+        "attrs": {"용적률": {"raw": "250%", "label": "용적률", "grade": "manual_verified"},
+                  "건폐율": {"raw": "30%", "label": "건폐율", "grade": "ocr_검토필요"},
+                  "계획세대수": {"raw": "1,234세대", "label": "계획세대수", "grade": "flagged"}}}}}}
+    f = _display_facts(d)
+    assert "용적률 250%" in f["계획정보"] and "용적률 250%(잠정)" not in f["계획정보"]  # manual=단정
+    assert "건폐율 30%(OCR 잠정)" in f["계획정보"]                                      # OCR=잠정
+    assert "계획세대수 1,234세대(잠정)" in f["계획정보"]                                # flagged=잠정
 
 
 def test_similar_case_uses_display_name_not_raw_code():  # §B-3

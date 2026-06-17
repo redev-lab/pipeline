@@ -27,14 +27,21 @@ def _display_facts(data: dict) -> dict:
         f["결론"] = v["headline"]                          # ⑥ 맨 위 한 문장 결론(결정론)
     conf = data.get("confidence")                          # ★신뢰도(점수-라벨 역전 방지)
     tag = f"({conf})" if conf else ""
-    f["판정"] = f"후보 클러스터 {'속함' if cand else '아님'}{tag}"
-    if data.get("b1_score") is not None:
-        f["환경유사도점수"] = f"{data['b1_score']}"
+    # ★in_zone(실제 지정구역) ≠ cand(환경 유사 군집) — '지정됨' 오독 차단(§defect 2)
+    # ★지정구역은 candidate 여부·환경점수 순위와 무관하게 '지정 정비구역'이 주 라벨(환경점수는 부가).
+    if data.get("in_zone"):
+        f["판정"] = f"지정 정비구역{tag}"
+    elif cand:
+        f["판정"] = f"환경 유사 군집 속함 — 지정 아님{tag}"
+    else:
+        f["판정"] = f"환경 유사 군집 아님{tag}"
+    # ★raw 환경유사도점수(b1_score)는 표시 안 함 — 점수가 0.97+에 포화돼 절대값이 오도(0.977이 '높아
+    #   보이나' 상대순위는 중하위). 사용자엔 rank_phrase(상대순위)만 노출. raw는 out['b1_score'] 메타로 보존.
 
-    # ② 환경점수 — 항상 채움. 표기는 rank_phrase(상위/하위, §B-1).
+    # ② 환경점수 — 항상 채움. ★상대순위(rank_phrase) — 절대값 아님을 명시(포화 오도 차단).
     fe = (st.get("예언_환경점수", {}) or {}).get("result")
     if fe:
-        f["환경점수"] = f"{fe['label']} {fe['rank_phrase']}"
+        f["환경점수"] = f"{fe['label']} {fe['rank_phrase']}(전 구역 상대순위)"
     else:
         f["환경점수"] = "산출 불가(그래프 노드 외 — 점수 미산출)"
     # ① 모순 해소 — ★점수는 높은데(상위 N% 이내) 후보 아님일 때만: 두 사실의 관계를 한 문장으로.
@@ -62,6 +69,23 @@ def _display_facts(data: dict) -> dict:
                       f"신축 아파트 전용 평당 {_won(mc.get('newbuild_exclu_pyung_man'))}")
     else:
         f["시세맥락"] = "산출 불가(반경 내 거래 부족)"
+
+    # ★계획정보(고시 추출, §5) — verified만 단정, flagged는 '(잠정)', 출처·최신 플래그 동봉
+    pi = (st.get("진단_계획정보", {}) or {}).get("result")
+    if pi and pi.get("attrs"):
+        parts = []
+        for a in ["용적률", "계획세대수", "구역면적", "건폐율"]:
+            it = pi["attrs"].get(a)
+            if it:
+                g = it.get("grade")
+                # verified·manual_verified=단정 / ocr_검토필요=OCR 잠정 / flagged=잠정
+                tag = "" if g in ("verified", "manual_verified") else "(OCR 잠정)" if g == "ocr_검토필요" else "(잠정)"
+                parts.append(f"{a} {_attr_display(a, it['raw'])}{tag}")
+        if parts:
+            src = f"서울고시 {pi['고시번호']} 기준"
+            if pi.get("flags"):
+                src += ", 후속 변경 미반영"           # ★흑석2 최신 미반영 등
+            f["계획정보"] = " · ".join(parts) + f" ({src})"
     el = (st.get("진입_eligibility", {}) or {}).get("result")
     if el:
         t = el["진단_토허"]
@@ -105,6 +129,28 @@ def _user_caveats(internal: list) -> list:
         if sentence not in out and any(any(k in c for k in keys) for c in internal):
             out.append(sentence)
     return out
+
+
+_UNIT = {"용적률": "%", "건폐율": "%", "구역면적": "㎡", "계획세대수": "세대"}
+
+
+def _attr_display(attr: str, raw: str) -> str:
+    """계획정보 표시 — 속성 단위 부착(면적 ㎡·건폐율 % 등). 이미 단위 있으면 원형 유지.
+
+    예: '30이하'(건폐율)→'30% 이하', '187,669.0'(면적)→'187,669㎡', '231.54%'→그대로.
+    숫자 자릿값은 보존(환각검증 — 계획정보 표시값이 곧 허용 원천이라 self-allowed).
+    """
+    u = _UNIT.get(attr, "")
+    s = (raw or "").strip()
+    if u and u in s:                                      # 이미 단위(% ㎡ 세대) 있으면 그대로
+        return s
+    m = re.match(r"\s*([\d,]+(?:\.\d+)?)(.*)$", s)
+    if not m:
+        return s
+    num, rest = m.group(1), m.group(2).strip()
+    if attr == "구역면적" and "." in num:                  # 187,669.0 → 187,669 (불필요 소수 제거)
+        num = num.rstrip("0").rstrip(".")
+    return f"{num}{u}" + (f" {rest}" if rest else "")
 
 
 def _pct(x):
@@ -156,7 +202,7 @@ def _template_report(facts: dict, caveats: list) -> str:
         L.append(f"\n결론: {facts['결론']}")
     sections = [
         ("1. 될까 (사업 환경)", ["판정", "후보판정설명", "환경점수", "요건판정", "노후도", "접도율"]),
-        ("2. 얼마 (시세 맥락)", ["시세맥락"]),
+        ("2. 얼마 (시세 맥락·계획)", ["시세맥락", "계획정보"]),
         ("3. 언제 (사업 단계)", ["잔여기간", "단계상태"]),
         ("4. 리스크 (사회신호)", ["사회신호", "유사사례"]),
         ("5. 진입 / 요약", ["토허", "행동분류"]),

@@ -33,6 +33,8 @@ class Context:
     comp: pd.Series               # pnu → 비교신축 전용 평당가
     name2code: dict               # 구명 → 시군구코드
     zone_vectors: object = None   # 사례검색용 51구역 벡터(retrieval)
+    pnu_zone: dict = None         # pnu → 지정구역 zone_id (고시 계획정보 조회용)
+    zone_attrs: dict = None       # zone_id → 고시 계획정보(용적률·세대수 등, verified/flagged)
 
 
 def build_context() -> Context:
@@ -139,18 +141,22 @@ def _verdict(out: dict) -> dict:
     fe = (out["stages"].get("예언_환경점수", {}) or {}).get("result") or {}
     pct = fe.get("rank_top_pct")
     pct_s = fe.get("rank_phrase") or "환경 점수 산출 불가"     # ★표시 문구(상위/하위, §B-1)와 일치
-    if out.get("candidate"):
-        path = ((out["stages"].get("진단_요건", {}) or {}).get("result") or {}).get("path")
-        cls = f"후보 — {path} 경로" if path else "후보 군집(요건 판정 보류)"
-        head = f"환경 점수 {pct_s}, 후보 군집 포함 — {cls}. 추정·참고치이며 단정 아님."
+    if out.get("in_zone"):                                    # ★실제 지정 정비구역(의제처리)
+        cls = "지정 정비구역"
+        head = (f"★실제 지정 정비구역(정비계획 확정). 환경 점수 {pct_s}는 노후환경 상대순위(참고)일 뿐 "
+                f"— 지정 여부와 무관. 추정·참고치, 단정 아님.")
+    elif out.get("candidate"):                                # ★환경 유사 후보 — 지정 아님(오독 차단)
+        cls = "환경 유사 후보(지정 아님)"
+        head = (f"환경 유사 {pct_s}(지정 아님) — 노후 환경이 닮은 후보 군집일 뿐, "
+                f"실제 지정·추진 구역은 아님. 단정 아님.")
     else:
         interest_pct = load_infer_config()["cluster"]["tight_top_pct"]   # 상위 N%면 '관심'(경계 밖)
         if pct is not None and pct <= interest_pct:
-            cls = "관심 권역(후보 경계 밖)"
-            head = f"환경 점수 {pct_s}이나 후보 군집 미포함 — 현 시점 관망 권역. 단정 아님."
+            cls = "관심(경계 밖, 지정 아님)"
+            head = f"환경 유사 {pct_s}이나 후보 군집 미포함 — 현 시점 관망. 지정 아님·단정 아님."
         else:
             cls = "대상 아님"
-            head = f"환경 점수 {pct_s} — 재개발 환경과 거리가 있어 현 시점 대상 아님. 단정 아님."
+            head = f"환경 유사 {pct_s} — 재개발 환경과 거리가 있어 현 시점 대상 아님. 단정 아님."
     return {"class": cls, "headline": head}
 
 
@@ -178,6 +184,12 @@ def run(address: str, ctx: Context, *, property_type: str | None = None, stage: 
     cluster = ctx.pnu_cluster.get(pnu)
     candidate = not (idx is None or ctx.scores[idx] < ctx.thr or cluster is None)
     out["candidate"] = candidate
+
+    # ★in_zone(실제 지정 정비구역) ≠ candidate(환경 유사 군집) — 혼동 금지(논현동 단계누수 수정).
+    #   candidate = '노후 환경이 닮은 고점 군집'(지정 아님). in_zone = 실제 지정구역(pnu_zone, 의제처리).
+    #   '언제'(잔여기간)·'지정' 판단은 in_zone일 때만. 환경 후보를 '지정됨'으로 오독하지 않게(§defect 1·2).
+    in_zone = pnu in (getattr(ctx, "pnu_zone", None) or {})
+    out["in_zone"] = in_zone
 
     # ★신뢰도 — 임계값에서 멀수록 고신뢰(확실히 높음/낮음), 근처면 저신뢰(애매). 점수-라벨 역전 방지.
     margin = load_infer_config()["cluster"]["confidence_margin"]
@@ -209,11 +221,17 @@ def run(address: str, ctx: Context, *, property_type: str | None = None, stage: 
     else:
         out["stages"]["진단_시세맥락"] = {"status": "skipped", "reason": "반경 내 거래 0(타깃 결측)"}
 
-    # ⑦ eligibility 진입(물건유형 입력 시). ★stage 기본값 누수 차단(계약 §11-3): stage 그대로 전달,
-    #    잔여기간은 후보 구역일 때만(in_zone=candidate). 토허는 현재 사실이라 구역 무관 산출.
+    # 계획정보(고시 추출, §5) — 질의 필지가 지정구역이면 그 구역 용적률·세대수 등. verified만 단정.
+    zid = (getattr(ctx, "pnu_zone", None) or {}).get(pnu)
+    za = (getattr(ctx, "zone_attrs", None) or {}).get(zid) if zid else None
+    if za and za.get("attrs"):
+        out["stages"]["진단_계획정보"] = {"status": "ok", "result": za}
+
+    # ⑦ eligibility 진입(물건유형 입력 시). ★잔여기간('언제')은 ★in_zone(실제 지정구역)일 때만 —
+    #    candidate(환경 후보)면 단계 출력 금지(논현동 단계누수 수정). stage 기본값도 차단(계약 §11-3).
     if property_type:
         out["stages"]["진입_eligibility"] = _stage(
-            score_eligibility, property_type, stage, in_zone=candidate)
+            score_eligibility, property_type, stage, in_zone=in_zone)
 
     out["caveats"] = [
         "v1 후보경계는 거친 필터(코어 ~39% 포착) — 정밀 경계 아님(R13).",

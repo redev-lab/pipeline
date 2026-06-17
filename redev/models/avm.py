@@ -162,10 +162,12 @@ def market_context(target_pyung: float, comp_pyung: float, *, agg_level=None, n_
     상승여력 수식(신축시세 − 매입가 − 분담금)은 ★v1.1: 용적률·비례율·조합원분양가가 와야
     *정직하게* 계산된다('안 하는' 게 아니라 '재료 대기'). 수치 단정 안 함 → 면책 부담↓(§9).
     """
+    def _n(x):                                       # ★NaN→None (JSON 직렬화 불가 차단 — comp 결측 등)
+        return None if x is None or (isinstance(x, float) and x != x) else x
     return {
-        "land_share_pyung_man": target_pyung,       # 인근 빌라 대지지분 평당가(만원/평)
-        "newbuild_exclu_pyung_man": comp_pyung,     # 인근 신축 아파트 전용 평당가(만원/평)
-        "confidence": {"agg_level": agg_level, "n_trades": n_trades},
+        "land_share_pyung_man": _n(target_pyung),   # 인근 빌라 대지지분 평당가(만원/평)
+        "newbuild_exclu_pyung_man": _n(comp_pyung), # 인근 신축 아파트 전용 평당가(만원/평)
+        "confidence": {"agg_level": agg_level, "n_trades": _n(n_trades)},
         "note": "두 값은 단위가 다르다(대지지분 평당 vs 전용 평당) — 직접 빼지 않는다(시세 맥락).",
         "caveats": [
             "상승여력 수치는 v1 보류. 정직 계산엔 용적률·비례율·조합원분양가 필요(v1.1).",

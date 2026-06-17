@@ -160,8 +160,17 @@ def build_serve_context(*, log=print):
     zlist = [{"zone_id": z, "pnus": set(g["pnu"]), "t": int(g["t"].iloc[0]), "zone_type": ztype.get(z)}
              for z, g in pos.groupby("zone_id")]
     zv = build_zone_vectors(zlist, parcels, buildings)
-    log(f"[zones] 사례 {len(zlist)}구역 ({time.time()-t0:.0f}s 누적)")
+    pnu_zone = dict(zip(pos["pnu"], pos["zone_id"]))         # 필지→지정구역(계획정보 조회, §5)
+    from redev.data.zone_attrs import load_zone_attrs, resolve_to_context
+    gdf = pd.read_csv(_RAW / _SRC["gosi"], encoding="cp949", dtype=str).drop_duplicates("고시관리코드")
+    title_map = dict(zip(gdf["고시관리코드"], gdf["제목"]))
+    matched = resolve_to_context(load_zone_attrs(), pos["zone_id"].unique().tolist(), title_map)
+    zone_attrs = matched["resolved"]                        # ★컨텍스트 zone_id로 재매핑(고시관리코드≠NTFC_SN 흡수)
+    if matched["unmatched"]:
+        log(f"[zones] ★계획정보 무매칭 {len(matched['unmatched'])}: {[u['zone_name'] for u in matched['unmatched']]}")
+    log(f"[zones] 사례 {len(zlist)}구역 / 계획정보 {len(zone_attrs)}구역 매칭 ({time.time()-t0:.0f}s 누적)")
 
     return Context(parcels, buildings, pnu_to_idx, None, jibun_index,    # edge_index=None(런타임 미사용)
                    scores, calibrated, pnu_cluster, float(thr),
-                   tgt["target_pyung"], tgt["agg_level"], comp, name2code, zv)
+                   tgt["target_pyung"], tgt["agg_level"], comp, name2code, zv,
+                   pnu_zone=pnu_zone, zone_attrs=zone_attrs)
