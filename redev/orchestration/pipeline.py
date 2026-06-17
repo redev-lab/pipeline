@@ -145,15 +145,16 @@ def _verdict(out: dict) -> dict:
         cls = "지정 정비구역"
         head = (f"★실제 지정 정비구역(정비계획 확정). 환경 점수 {pct_s}는 노후환경 상대순위(참고)일 뿐 "
                 f"— 지정 여부와 무관. 추정·참고치, 단정 아님.")
-    elif out.get("candidate"):                                # ★환경 유사 후보 — 지정 아님(오독 차단)
-        cls = "환경 유사 후보(지정 아님)"
-        head = (f"환경 유사 {pct_s}(지정 아님) — 노후 환경이 닮은 후보 군집일 뿐, "
-                f"실제 지정·추진 구역은 아님. 단정 아님.")
+    elif out.get("candidate"):                                # ★환경 유사 후보 — 우리 데이터 미지정(누락 가능)
+        cls = "환경 유사 후보(미지정)"
+        # ★'지정 아님' 단정 금지 — 우리 라벨(의제처리 재개발구역)은 부분집합이라 일반 주택재개발 누락 가능.
+        head = (f"환경 유사 {pct_s} · 노후 환경이 닮은 후보 군집. "
+                f"우리 데이터(의제처리 재개발구역) 기준 지정 구역으로 확인 안 됨 — 누락 가능, 직접 확인 권장. 단정 아님.")
     else:
         interest_pct = load_infer_config()["cluster"]["tight_top_pct"]   # 상위 N%면 '관심'(경계 밖)
         if pct is not None and pct <= interest_pct:
-            cls = "관심(경계 밖, 지정 아님)"
-            head = f"환경 유사 {pct_s}이나 후보 군집 미포함 — 현 시점 관망. 지정 아님·단정 아님."
+            cls = "관심(경계 밖)"
+            head = f"환경 유사 {pct_s}이나 후보 군집 미포함 — 현 시점 관망. 우리 데이터 기준 미지정(누락 가능)."
         else:
             cls = "대상 아님"
             head = f"환경 유사 {pct_s} — 재개발 환경과 거리가 있어 현 시점 대상 아님. 단정 아님."
@@ -239,6 +240,9 @@ def run(address: str, ctx: Context, *, property_type: str | None = None, stage: 
         "보존지구·상업지역 등은 점수가 높아도 정비 대상이 아닐 수 있음 — 용도지역 미반영(D-2 수검).",
         "모든 수치 추정·참고치이며 투자 권유 아님(R15).",
     ]
+    if not in_zone:                                           # ★라벨 커버리지 한계(R7) — '지정 아님' 단정 금지
+        out["caveats"].append(
+            "지정 여부는 의제처리 재개발구역 데이터 기준 — 일반 주택재개발·가로주택 등 일부 지정구역은 누락 가능(R7).")
     out["verdict"] = _verdict(out)         # ★결정론 한 문장 결론 + 행동분류(계약 §11-6, 규칙4: LLM 아님)
 
     # ⑨ 종합 리포트 — ★opt-in(LLM 호출, 한도·속도). retrieval(유사구역)+social(사회신호)+report.
