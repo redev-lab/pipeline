@@ -32,7 +32,8 @@ def _pick_col(df: pd.DataFrame, names) -> str | None:
 def load_index(csv_path) -> pd.DataFrame:
     """로컬 토지이음 고시목록 CSV → 정규화 인덱스 [고시번호(YYYY-NNN), 고시일자, url, 고시명].
 
-    무키·즉시(사용자가 data.go.kr에서 무로그인 다운로드해 두면 어디서나 파싱). cp949/utf-8 자동.
+    ★전국 데이터 — 고시번호는 기관별로 중복(2024-448이 전국 13건). dedup 안 함; resolve가 (번호+일자+명)
+    으로 서울 고시를 가려낸다. 무키·즉시(무로그인 다운로드 CSV). cp949/utf-8 자동.
     """
     for enc in ("utf-8-sig", "cp949", "utf-8"):
         try:
@@ -47,20 +48,40 @@ def load_index(csv_path) -> pd.DataFrame:
         col = _pick_col(df, names)
         out[key] = df[col] if col else None
     out["고시번호"] = out["고시번호"].map(_gosi_no)        # YYYY-NNN 표준화
-    return out.dropna(subset=["고시번호"]).drop_duplicates("고시번호")
+    out["고시일자"] = out["고시일자"].map(lambda s: re.sub(r"[^\d]", "", str(s or ""))[:8])  # YYYYMMDD
+    return out.dropna(subset=["고시번호"])                  # ★dedup 금지(전국 중복)
 
 
-def urls_for(gosi_nos, index: pd.DataFrame) -> list:
-    """고시번호 리스트 → 다운로드 매니페스트 [{고시번호, 고시명, url}]. 인덱스에 없으면 url=None(미발견)."""
-    want = [_gosi_no(g) for g in gosi_nos]
-    by = index.set_index("고시번호")
+def _name_core(s) -> str:
+    """구역명/고시명에서 매칭 토큰 추출 — '불광제5'→'불광5', '고척동253번지'→'고척동253', '장위15구역'→'장위15'.
+    한글(2+)+옵션'제'+숫자 첫 출현. 표기 흔들림(제N·동N번지·N구역) 흡수."""
+    m = re.search(r"([가-힣]{2,})제?\s*(\d+)\s*구역", str(s or "")) or re.search(r"([가-힣]{2,})제?\s*(\d+)", str(s or ""))
+    return (m.group(1) + m.group(2)) if m else ""
+
+
+def resolve_urls(targets, index: pd.DataFrame) -> list:
+    """★(고시번호+고시일자+구역명) 3중 매칭으로 정확한 서울 고시 URL 해소(전국 번호중복 차단).
+
+    targets = [{"고시번호","고시일자"(옵션),"구역명"(옵션)}]. 번호+일자로 좁히고, ★구역명 토큰이 고시명에
+    일치할 때만 URL 반환(고신뢰). 구역명 줬는데 이름 불일치 = ★미발견(엉뚱한 지역 URL 반환 금지 —
+    오매칭보다 무발견). 구역명 없으면 번호+일자 유일행만 채택(중신뢰). 반환 [{...url, matched_title, conf}].
+    """
     out = []
-    for g in want:
-        if g in by.index:
-            r = by.loc[g]
-            out.append({"고시번호": g, "고시명": r["고시명"], "url": r["url"]})
-        else:
-            out.append({"고시번호": g, "고시명": None, "url": None})       # 미발견(연간 갱신 전일 수 있음)
+    for t in targets:
+        no, dt = _gosi_no(t.get("고시번호")), re.sub(r"[^\d]", "", str(t.get("고시일자") or ""))[:8]
+        core = _name_core(t.get("구역명") or "")
+        c = index[index["고시번호"] == no]
+        if dt and len(c[c["고시일자"] == dt]):
+            c = c[c["고시일자"] == dt]
+        url, mt, conf = None, None, "미발견"
+        if core:                                          # 구역명 주면 ★이름 일치할 때만(오매칭 차단)
+            nm = c[c["고시명"].fillna("").map(lambda s: _name_core(s) == core)]
+            if len(nm):
+                r = nm.iloc[0]; url, mt, conf = r["url"], r["고시명"], "고"
+        elif len(c) == 1:                                 # 구역명 없으면 번호+일자 유일행만
+            r = c.iloc[0]; url, mt, conf = r["url"], r["고시명"], "중"
+        out.append({"고시번호": no, "고시일자": t.get("고시일자"), "구역명": t.get("구역명"),
+                    "url": url, "matched_title": mt, "conf": conf})
     return out
 
 
