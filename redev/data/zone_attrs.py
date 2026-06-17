@@ -26,17 +26,33 @@ SAMPLES = [
      "file": "구로구_제2026-18호_고시.pdf", "flags": []},
     {"zone_id": "11380NTC202008310004", "zone": "응암제2구역", "고시번호": "2020-133", "고시일자": "2020-07-30",
      "file": "응암.pdf", "flags": []},
+    # 1차 배치 신규(디지털 5 — 성북1·불광5는 스캔이라 OCR 대기로 제외)
+    {"zone_id": "11590NTC202505120002", "zone": "상도14구역", "고시번호": "2025-179", "고시일자": "2025-04-03",
+     "file": "서울특별시_제2025-179호_고시.pdf", "flags": []},
+    {"zone_id": "11590NTC202505190004", "zone": "상도15구역", "고시번호": "2025-178", "고시일자": "2025-04-03",
+     "file": "서울특별시_제2025-178호_고시.pdf", "flags": []},
+    {"zone_id": "11290NTC202504180005", "zone": "석관4구역", "고시번호": "2025-194", "고시일자": "2025-04-10",
+     "file": "서울특별시_제2025-194호_고시.pdf", "flags": []},
+    {"zone_id": "11290NTC202503060003", "zone": "하월곡1구역", "고시번호": "2025-245", "고시일자": "2025-05-01",
+     "file": "서울특별시_제2025-245호_고시.pdf", "flags": []},
+    {"zone_id": "11380NTC202411130006", "zone": "불광8구역", "고시번호": "2024-484", "고시일자": "2024-10-17",
+     "file": "서울특별시_제2024-484호_고시.pdf", "flags": []},
 ]
 
 
-def build_zone_attrs(*, complete_fn=None, samples=None) -> dict:
-    """표본 고시 본문 → 추출+검증 → zone_id별 계획정보 스토어 저장. (LLM 추출, 빌드 1회.)"""
+def build_zone_attrs(*, complete_fn=None, samples=None, merge: bool = True) -> dict:
+    """표본 고시 본문 → 추출+검증 → zone_id별 계획정보 스토어 저장.
+
+    merge=True면 기존 스토어 로드 후 ★신규 zone_id만 LLM 추출(이미 추출분 재호출 안 함 — 한도 절약).
+    """
     from redev.data.ingest.gosi_body import read_gosi
     from redev.nlp.gosi_extract import ATTRS, extract_attrs
     from redev.nlp.gosi_verify import verify_extraction
 
-    store = {}
+    store = load_zone_attrs() if merge else {}
     for s in (samples or SAMPLES):
+        if merge and s["zone_id"] in store:                  # 이미 추출됨 → 건너뜀(LLM 절약)
+            continue
         g = read_gosi(_DIR / s["file"])
         ex = extract_attrs(g["text"], zone_name=s["zone"], 고시번호=s["고시번호"],
                            고시일자=s["고시일자"], complete_fn=complete_fn)
