@@ -200,3 +200,52 @@ cd ../frontend && npm install && npm run dev   # vite proxy → :8000
 
 GEMINI_API_KEY(리포트)·선택 JUSO_API_KEY(도로명 변환)는 backend `.env`. 키 없으면 지번 입력
 그대로 동작.
+
+## 동료 셋업 가이드 (git + 드라이브 데이터 공유)
+
+★`_data/`·`.env`는 깃에서 제외(.gitignore)된다 → **clone만으론 코드뿐, 안 돈다.** 데이터는 드라이브로 별도.
+
+### 데이터 분류
+| 폴더 | 용량 | 성격 | 공유? |
+|---|---|---|---|
+| `_data/raw/` | ~753M | ★원천(지적도·건물·고시·공시지가 등) — **재빌드 불가** | **필수 공유** |
+| `_data/cache/` | ~99M | 실거래가 API 캐시 — 재빌드 가능하나 ★느림(키·시간) | **공유 권장** |
+| `_data/processed/zone_attrs.json` | ~8K | 고시 추출 계획정보 — 재빌드에 ★LLM(Gemini) 비용 | **공유 권장** |
+| `_data/processed/`(그 외: pickle·infer_scores·train matrix) | ~225M | 파생 캐시 — **코드로 재빌드 가능** | 선택(공유=즉시 / 미공유=재빌드) |
+| `.env` | — | ★API 키(시크릿) | ★**드라이브 금지** — 안전채널 별도, 또는 동료 자체 발급 |
+
+### ★드라이브로 무엇을 공유? (동료가 나랑 똑같이 돌게)
+- **드라이브 폴더 = `_data/raw/` + `_data/cache/` + `_data/processed/zone_attrs.json`** (~852M).
+  - 파생(pickle·infer_scores·train matrix)은 굳이 안 줘도 동료가 재빌드(아래). 단, **즉시 돌게 하려면
+    `_data/processed/` 전체도 같이 주면** 됨(주의: `serve_ctx.pkl`은 lib 버전 다르면 언피클 실패 가능 →
+    실패 시 자동 재빌드되니 무방).
+  - `_data/processed/_*.txt`(진단 로그)는 안 줘도 됨(쓰레기).
+- **`.env`는 드라이브에 넣지 말 것.** 키는 메신저 등으로 따로 주거나, 동료가 data.go.kr·Gemini 본인 키 발급.
+
+### 동료가 받은 뒤 (역할별)
+**(a) 코드 리뷰만**: `git clone` → `pip install -r requirements.txt` → `pytest -q`(순수 단위테스트 통과).
+   데이터 불필요.
+
+**(b) 데모 서버 띄우기**:
+1. `git clone` (pipeline·backend·frontend 3레포)
+2. 드라이브 받은 `raw/`·`cache/`·`zone_attrs.json`을 `pipeline/_data/`의 같은 경로에 둔다
+3. `pip install -e ../pipeline -r requirements.txt` (+ torch CPU 빌드)
+4. `backend/.env`에 `GEMINI_API_KEY`(+선택 `JUSO_API_KEY`·`DATA_GO_KR_KEY`) — 본인 키
+5. `uvicorn app:app --port 8000` → ★첫 기동이 파생(점수·pickle) **자동 재빌드**(~5분), 이후 pickle 로드(수초)
+6. `cd ../frontend && npm install && npm run dev`
+
+**(c) 개발**: (b) + `_data/processed/` 전체 받으면 재빌드 생략(즉시).
+
+### 파생 수동 재빌드 (필요 시)
+```python
+from redev.models.baseline import prepare_baseline_matrix; prepare_baseline_matrix()      # 학습행렬
+from redev.serve.infer_districts import build_inference_scores; build_inference_scores(force_rebuild=True)  # 점수캐시
+from redev.serve.api import load_serve_context; load_serve_context(rebuild=True)           # 컨텍스트 pickle(백엔드 첫 기동이 자동)
+```
+
+### ★공유 전 라이선스·민감정보 점검
+- **개인정보 없음**: _data는 필지(PNU=공개 지번)·건물·고시·실거래가(공개)뿐. 예측 로그도 PII 없음.
+- **`.env` = 시크릿** → 절대 드라이브/깃 금지.
+- **의제처리(UQ181, OA-20957) = 공공누리 4유형(상업금지+변경금지)**: ★동료와 **내부 개발 공유는 OK**(비상업),
+  단 **공개 재배포·상업 사용 금지**. 상업 전환 시 교체([DATA_SOURCES.md](DATA_SOURCES.md)).
+- 그 외(지적도·건물·공시지가·고시): 출처표시 조건. 고시 본문 PDF(고시정보/)는 법령·고시라 저작권 비보호.
