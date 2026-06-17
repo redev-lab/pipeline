@@ -28,7 +28,7 @@ _DATA = {
 
 def test_display_facts_preformats_strings():
     f = _display_facts(_DATA)
-    assert f["환경점수"] == "재개발 환경 점수 하위 22.7%"     # §B-1: 77.3%(상위) → 하위 22.7%
+    assert f["환경점수"] == "재개발 환경 점수 하위 22.7%(전 구역 상대순위)"   # §B-1 + 상대순위 명시(포화 오도 차단)
     assert f["노후도"] == "노후·불량 연면적 94%"
     assert "1,658만원" in f["시세맥락"] and "5,446만원" in f["시세맥락"]
 
@@ -97,7 +97,7 @@ def test_judgment_in_zone_vs_candidate_no_misread():  # §defect 2 — '지정' 
     cand = _display_facts(_DATA)                     # candidate=True, in_zone 없음
     assert cand["판정"] == "환경 유사 군집 속함 — 지정 아님(고신뢰)"   # '지정 아님' 명시
     desig = _display_facts({**_DATA, "in_zone": True})
-    assert desig["판정"] == "지정 정비구역 + 환경 후보(고신뢰)"        # 실제 지정구역만 '지정'
+    assert desig["판정"] == "지정 정비구역(고신뢰)"                   # 지정구역은 '지정'이 주 라벨(환경점수 부가)
 
 
 def test_report_returns_translated_caveats_user():  # 패널용 번역 caveat 노출
@@ -116,7 +116,7 @@ def test_low_score_noncandidate_no_contradiction_note():  # 결함 1 경계 — 
            "예언_환경점수": {"status": "ok", "result": {"label": "재개발 환경 점수", "rank_top_pct": 100.0, "rank_phrase": "하위 0.0%"}}}}
     f = _display_facts(low)
     assert "후보판정설명" not in f                  # 점수 낮음 → '대상 아님'이 설명, 모순 문장 없음
-    assert f["환경점수"] == "재개발 환경 점수 하위 0.0%"      # §B-1: 상위 100% → 하위 0.0%(결함2 채움 유지)
+    assert f["환경점수"] == "재개발 환경 점수 하위 0.0%(전 구역 상대순위)"   # §B-1: 상위 100%→하위 0.0%(채움 유지)
 
 
 def test_stage_not_leaked_for_noncandidate():     # 결함 3

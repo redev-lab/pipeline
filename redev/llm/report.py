@@ -28,19 +28,20 @@ def _display_facts(data: dict) -> dict:
     conf = data.get("confidence")                          # ★신뢰도(점수-라벨 역전 방지)
     tag = f"({conf})" if conf else ""
     # ★in_zone(실제 지정구역) ≠ cand(환경 유사 군집) — '지정됨' 오독 차단(§defect 2)
+    # ★지정구역은 candidate 여부·환경점수 순위와 무관하게 '지정 정비구역'이 주 라벨(환경점수는 부가).
     if data.get("in_zone"):
-        f["판정"] = f"지정 정비구역 + 환경 후보{tag}"
+        f["판정"] = f"지정 정비구역{tag}"
     elif cand:
         f["판정"] = f"환경 유사 군집 속함 — 지정 아님{tag}"
     else:
         f["판정"] = f"환경 유사 군집 아님{tag}"
-    if data.get("b1_score") is not None:
-        f["환경유사도점수"] = f"{data['b1_score']}"
+    # ★raw 환경유사도점수(b1_score)는 표시 안 함 — 점수가 0.97+에 포화돼 절대값이 오도(0.977이 '높아
+    #   보이나' 상대순위는 중하위). 사용자엔 rank_phrase(상대순위)만 노출. raw는 out['b1_score'] 메타로 보존.
 
-    # ② 환경점수 — 항상 채움. 표기는 rank_phrase(상위/하위, §B-1).
+    # ② 환경점수 — 항상 채움. ★상대순위(rank_phrase) — 절대값 아님을 명시(포화 오도 차단).
     fe = (st.get("예언_환경점수", {}) or {}).get("result")
     if fe:
-        f["환경점수"] = f"{fe['label']} {fe['rank_phrase']}"
+        f["환경점수"] = f"{fe['label']} {fe['rank_phrase']}(전 구역 상대순위)"
     else:
         f["환경점수"] = "산출 불가(그래프 노드 외 — 점수 미산출)"
     # ① 모순 해소 — ★점수는 높은데(상위 N% 이내) 후보 아님일 때만: 두 사실의 관계를 한 문장으로.
