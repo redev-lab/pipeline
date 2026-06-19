@@ -91,27 +91,59 @@ def build_context() -> Context:
                    tgt["target_pyung"], tgt["agg_level"], comp, name2code, zv)
 
 
-def address_to_pnu(address: str, ctx: Context) -> str:
-    """★4구 지번주소 → PNU. 도로명주소는 미지원(친절한 에러). PNU 직접입력도 허용(19자리)."""
-    s = str(address).strip()
-    if re.fullmatch(r"\d{19}", s):                      # PNU 직접입력
-        return s
-    s = re.sub(r"^서울(특별시)?\s*", "", s)
+def _parse_address(address: str, ctx: Context):
+    """지번주소 → (sig, [동 후보], 본, 부). 도로명/구 미인식/파싱실패는 친절한 에러. PNU 직접입력은 호출부.
+
+    동 후보 = [입력 동, 행정→법정 변환] (둘 다 룩업 시도). 구 인식은 name2code(전역 25구)로 — 7구냐
+    전역이냐는 *룩업 단계*에서 갈린다(여기선 파싱만).
+    """
+    s = re.sub(r"^서울(특별시)?\s*", "", str(address).strip())
     gu = re.search(r"([가-힣]+구)", s)
     if not gu or gu.group(1) not in ctx.name2code:
-        raise ValueError(f"4구(성북·동작·은평·구로) 밖이거나 구 미인식: {address}")
+        raise ValueError(f"서울 25구 밖이거나 구 미인식: {address}")
     rest = s[gu.end():].strip()
     if re.search(r"(로|길)\s*\d", rest) and not re.search(r"[동가]\s*\d", rest):
-        raise ValueError("도로명주소 미지원 — v1은 지번주소만 (예: '성북구 정릉동 170-1').")
+        raise ValueError("도로명주소 미지원 — 지번주소만 (예: '성북구 정릉동 170-1').")
     parsed = parse_location(rest)
     if parsed is None:
         raise ValueError(f"지번 파싱 실패: '{rest}' (예: '정릉동 170-1')")
     dong, bon, bu, _san = parsed
-    sig = ctx.name2code[gu.group(1)]
-    pnu = ctx.jibun_index.get((sig, dong, bon, bu)) or ctx.jibun_index.get((sig, admin_to_legal_dong(dong), bon, bu))
-    if pnu is None:
-        raise ValueError(f"4구 내 해당 지번 없음: {address}")
-    return pnu
+    return ctx.name2code[gu.group(1)], [dong, admin_to_legal_dong(dong)], bon, bu
+
+
+def address_to_pnu(address: str, ctx: Context) -> str:
+    """★7구 ctx 지번주소 → PNU. 도로명 미지원(친절 에러). PNU 직접입력 허용(19자리)."""
+    s = str(address).strip()
+    if re.fullmatch(r"\d{19}", s):                      # PNU 직접입력
+        return s
+    sig, dongs, bon, bu = _parse_address(address, ctx)
+    for d in dongs:
+        pnu = ctx.jibun_index.get((sig, d, bon, bu))
+        if pnu:
+            return pnu
+    raise ValueError(f"7구 컨텍스트 내 해당 지번 없음: {address}")
+
+
+def address_to_pnu_scoped(address: str, ctx: Context, gidx=None):
+    """★7구 우선 → 전역 사이드카 폴백. 반환 (pnu, scope). scope='full'(7구 풀)|'partial'(전역 점수·판정만).
+
+    gidx 없으면 7구만(기존 동작). 전역 인덱스로 7구 밖(예: 방배동)도 PNU 해소 → 부분 리포트로 연결.
+    """
+    s = str(address).strip()
+    if re.fullmatch(r"\d{19}", s):
+        return s, ("full" if s in (getattr(ctx, "pnu_to_idx", None) or {}) else "partial")
+    sig, dongs, bon, bu = _parse_address(address, ctx)
+    for d in dongs:                                     # 7구 우선(풀 리포트)
+        pnu = ctx.jibun_index.get((sig, d, bon, bu))
+        if pnu:
+            return pnu, "full"
+    if gidx:                                            # 전역 폴백(부분 리포트)
+        from redev.serve.global_index import lookup_pnu
+        for d in dongs:
+            pnu = lookup_pnu(gidx, sig, d, bon, bu)
+            if pnu:
+                return pnu, "partial"
+    raise ValueError(f"서울 내 해당 지번 없음: {address}")
 
 
 def _confidence(score: float, thr: float, margin: float) -> str:

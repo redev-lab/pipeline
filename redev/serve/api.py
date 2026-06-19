@@ -69,6 +69,38 @@ def report(address: str, ctx, *, property_type: str | None = None, stage: str | 
     return run(address, ctx, property_type=property_type, stage=stage, with_report=True)
 
 
+def partial_report(pnu: str, *, gidx: dict, scores_df) -> dict:
+    """★7구 밖 부분 리포트 — 전역 캐시·사이드카로 '환경 점수 + 판정(지정/후보)'만. 상세는 미제공(정직).
+
+    시세·노후도·접도율·사례는 7구 ctx 의존이라 전역서 못 줌 → 화면에 명확히 '미제공' 표시(과신 방지).
+    run()과 호환 형태(stages·verdict·in_zone·candidate·report) 반환 + scope='global_partial' 플래그.
+    """
+    from redev.orchestration.pipeline import _verdict
+
+    pi = int(pnu)
+    out = {"pnu": pnu, "scope": "global_partial",
+           "in_zone": pi in gidx["zones"], "candidate": pi in gidx["clusters"]}
+    row = scores_df[scores_df["pnu"] == pnu]
+    if len(row):
+        sp = float(row["score_pct"].iloc[0])
+        top = round(100 * (1 - sp), 1)                      # 상위 X% (구내 백분위, /screen과 동일 기준)
+        phrase = f"상위 {top}%" if top <= 50 else f"하위 {round(100 - top, 1)}%"
+        out["stages"] = {"예언_환경점수": {"status": "ok", "result": {
+            "label": "재개발 환경 점수", "rank_top_pct": top, "rank_phrase": phrase,
+            "raw_score": float(row["score"].iloc[0])}}}
+    else:
+        out["stages"] = {"예언_환경점수": {"status": "error", "reason": "전역 캐시에 점수 없음"}}
+    out["verdict"] = _verdict(out)                          # 결정론 결론(in_zone/candidate 반영) 재사용
+    note = ("이 지역은 학습 지역(7구) 밖 — 환경 점수·판정만 제공합니다. "
+            "시세·노후도·접도율 등 상세는 미제공(상세는 7구만). "
+            "점수·판정은 전역 캐시 기반으로, 7구 상세검증을 거치지 않은 값이니 참고로만.")
+    out["caveats"] = [note]
+    out["report"] = {"report_text": "", "source": "partial", "partial_note": note,
+                     "hallucination": {"ok": True, "unmatched": []},
+                     "caveats_user": [note], "source_facts": {}}
+    return out
+
+
 def load_serve_context(*, rebuild: bool = False, log=print):
     """★서버 기동 진입점 — 직렬화된 컨텍스트가 있으면 로드(빠름), 없으면 빌드 후 저장.
 
