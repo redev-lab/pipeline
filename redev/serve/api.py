@@ -46,16 +46,21 @@ def load_scores() -> pd.DataFrame:
 
 def screen(scores: pd.DataFrame, *, gu: str | None = None, min_pct: float = 0.0,
            toheo: bool | None = None, top_k: int = 50) -> list:
-    """★스크리너 — 점수 캐시 정렬·필터(거의 공짜). 구·점수백분위 필터 → 상위 필지 리스트.
+    """★스크리너 — 점수 캐시 필터(거의 공짜). 구 + ★백분위(score_pct, 포화무관) 필터 → 상위 필지.
 
-    toheo 필터는 물건유형 의존이라 백엔드에서 eligibility로 후처리(여기선 구·점수만). 좌표 동봉(지도).
+    ★raw score는 0.97~0.99 포화라 미노출(오도) — 대신 rank_pct(전노드 순위 백분위) 반환. min_pct=백분위
+    임계(0.90=상위10%). 주소·지정·군집 보강은 backend(ctx 필요)에서. 좌표 동봉(지도).
+    ※캐시 aging은 *필지 자기* 이진 플래그(GNN은 이웃 노후로 점수)라 노후도 표시엔 부적합 → 미노출.
     """
     df = scores
     if gu:
         df = df[df["sigungu"] == gu]
     df = df[df["score_pct"] >= min_pct].nlargest(top_k, "score")
-    cols = [c for c in ["pnu", "sigungu", "score", "score_pct", "lon", "lat"] if c in df.columns]
-    return df[cols].to_dict("records")
+    cols = [c for c in ["pnu", "sigungu", "score_pct", "lon", "lat"] if c in df.columns]
+    recs = df[cols].to_dict("records")
+    for r in recs:
+        r["rank_pct"] = round(100 * (1 - r.pop("score_pct")), 1)   # 상위 X% (전노드 순위, 포화무관)
+    return recs
 
 
 def report(address: str, ctx, *, property_type: str | None = None, stage: str | None = None) -> dict:

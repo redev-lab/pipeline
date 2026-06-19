@@ -65,10 +65,12 @@ def _display_facts(data: dict) -> dict:
 
     mc = (st.get("진단_시세맥락", {}) or {}).get("result")
     if mc:
-        f["시세맥락"] = (f"인근 빌라 대지지분 평당 {_won(mc.get('land_share_pyung_man'))} / "
-                      f"신축 아파트 전용 평당 {_won(mc.get('newbuild_exclu_pyung_man'))}")
+        def _wp(x):                                       # 평당가 — 결측은 '거래 부족'(어색한 '값없음/평' 회피)
+            return "거래 부족" if x is None or (isinstance(x, float) and x != x) else f"{int(round(x)):,}만원/평"
+        f["시세맥락"] = (f"빌라 대지지분 {_wp(mc.get('land_share_pyung_man'))} · "
+                      f"신축 전용 {_wp(mc.get('newbuild_exclu_pyung_man'))}")
     else:
-        f["시세맥락"] = "산출 불가(반경 내 거래 부족)"
+        f["시세맥락"] = "시세 산출 불가(반경 내 거래 부족)"
 
     # ★계획정보(고시 추출, §5) — verified만 단정, flagged는 '(잠정)', 출처·최신 플래그 동봉
     pi = (st.get("진단_계획정보", {}) or {}).get("result")
@@ -119,6 +121,8 @@ _CAVEAT_RULES = [
     (("상승여력",), "예상 수익(상승여력)은 분담금 등 정보가 더 필요해 현재 산정하지 않습니다."),
     (("토허",), "토지거래허가 규제는 수시로 바뀌니 사용 시점의 최신 고시를 확인하세요."),
     (("범위·변동 큼",), "사업 단계별 잔여 기간은 분쟁·경기 등 외부 요인으로 크게 달라질 수 있습니다."),
+    (("의제처리 재개발구역 데이터 기준",),
+     "‘지정 아님’은 ‘우리 데이터에 없음’을 뜻합니다 — 지정 판정은 의제처리 재개발구역 기준이라 일반 주택재개발·가로주택 등 일부 지정구역은 누락될 수 있습니다(실제 지정은 정비사업 정보몽땅 등에서 확인)."),
 ]
 
 
@@ -195,44 +199,41 @@ def verify_numbers(report: str, facts: dict, caveats=()) -> dict:
     return {"ok": not unmatched, "unmatched": unmatched}
 
 
-def _template_report(facts: dict, caveats: list) -> str:
-    """결정론 템플릿(폴백·환각 0 기준선). 표시문자열을 5종 판단 구조로 채움(계약 §11)."""
-    L = ["[재개발 투자 판단 리포트 — 참고치]"]
-    if "결론" in facts:
-        L.append(f"\n결론: {facts['결론']}")
-    sections = [
-        ("1. 될까 (사업 환경)", ["판정", "후보판정설명", "환경점수", "요건판정", "노후도", "접도율"]),
-        ("2. 얼마 (시세 맥락·계획)", ["시세맥락", "계획정보"]),
-        ("3. 언제 (사업 단계)", ["잔여기간", "단계상태"]),
-        ("4. 리스크 (사회신호)", ["사회신호", "유사사례"]),
-        ("5. 진입 / 요약", ["토허", "행동분류"]),
-    ]
-    for title, keys in sections:
-        rows = [f"- {k}: {facts[k]}" for k in keys if k in facts]
-        if rows:
-            L.append(f"\n[{title}]")
-            L += rows
-    if caveats:
-        L.append("\n[한계·주의]")
-        L += [f"- {c}" for c in caveats]
+# 본문 5절 — (라벨, 표시값 키들). 결론·환경점수·판정은 카드(화면)로 빠지므로 본문엔 없음.
+_SECTIONS = [
+    ("될까", ["후보판정설명", "요건판정", "노후도", "접도율"]),
+    ("얼마", ["시세맥락", "계획정보"]),
+    ("언제", ["잔여기간", "단계상태"]),
+    ("리스크", ["유사사례", "사회신호"]),
+    ("진입", ["토허"]),
+]
+
+
+def _template_report(facts: dict) -> str:
+    """결정론 템플릿(폴백·환각 0 기준선). 깨끗한 5절(태그·결론·한계 없음 — 화면이 카드/접힘으로 표시)."""
+    L = []
+    for label, keys in _SECTIONS:
+        vals = [facts[k] for k in keys if k in facts]
+        if vals:
+            L.append(f"### {label}")
+            L.append(" · ".join(vals))
     return "\n".join(L)
 
 
+# 본문에서 LLM에 주지 않는 '카드' 키(화면 상단 카드·칩이 따로 표시 — 본문 중복 금지).
+_CARD_KEYS = {"결론", "판정", "환경점수", "행동분류"}
+
 _SYSTEM = (
-    "너는 재개발 투자 판단 리포트 작성자다. 주어진 '표시값'과 '한계'만으로 한국어 리포트를 쓴다.\n"
+    "너는 재개발 투자 판단 리포트 작성자다. 주어진 '표시값'만으로 한국어 본문을 쓴다.\n"
+    "★출력 형식 — 정확히 5개 절, 각 절 머리는 '### ' + 라벨, 그 아래 ★1~2줄:\n"
+    "### 될까\n### 얼마\n### 언제\n### 리스크\n### 진입\n"
     "★규칙:\n"
-    "(1) 맨 위에 표시값.결론 한 문장을 제목 바로 아래 '결론'으로 제시한다.\n"
-    "(2) 본문은 5종 판단(될까·얼마·언제·리스크·진입) 구조. ★각 절은 새 정보만 — 앞 절 내용·인용을 "
-    "반복하지 마라(같은 표시값 인용은 절당 1회).\n"
-    "(3) 모든 주장 문장 끝에 근거 태그 [키=표시값]을 붙여라.\n"
-    "(4) ★표시값의 숫자·문자열을 글자 그대로 쓰고 변형(반올림·단위변환·재계산) 금지. 표시값·한계에 "
-    "없는 숫자를 새로 만들지 마라.\n"
-    "(5) ★'언제(사업 단계)' 절: 표시값에 '잔여기간'이 없으면 단계·기간을 쓰지 말고 '단계상태' 문구를 "
-    "그대로 쓴다.\n"
-    "(6) ★5절(진입/요약)은 1절 반복이 아니라 표시값.행동분류 기준의 행동 관점 요약이다.\n"
-    "(7) '한계·주의'는 리포트 끝 한 곳에만 두고, 주어진 '한계' 문장만 가감 없이 옮긴다.\n"
-    "(8) ★내부 코드(R숫자·§·★)나 설계 메모를 절대 쓰지 마라 — 주어진 문장만 사용한다. 투자 권유 표현 "
-    "금지(참고치). 간결하게."
+    "(1) ★대괄호 태그([키=값])·내부 코드(R숫자·§·★)·인사말·머리말 절대 쓰지 마라 — 깨끗한 평서문만.\n"
+    "(2) ★각 절 1~2줄, 명사형으로 간결하게(군더더기·수식어 금지). 예: '빌라 대지지분 6,360만원/평'.\n"
+    "(3) 결론 문장·환경 순위·후보/지정 판정은 ★쓰지 마라 — 화면 상단 카드가 따로 표시한다(중복 금지).\n"
+    "(4) ★표시값의 숫자·문자열 그대로(변형·창작 금지). 표시값에 없으면 쓰지 마라.\n"
+    "(5) '언제'에 '잔여기간' 없으면 단계·기간을 만들지 말고 '단계상태' 문구 그대로.\n"
+    "(6) '한계·주의'는 쓰지 마라 — 화면이 따로 접힘으로 표시한다. 투자 권유 표현 금지(참고치)."
 )
 
 
@@ -244,6 +245,7 @@ def generate_report(data: dict, *, complete_fn=None) -> dict:
     """
     import json
     facts = _display_facts(data)
+    body_facts = {k: v for k, v in facts.items() if k not in _CARD_KEYS}   # 카드 키 제외(본문 중복 방지)
     internal = _all_caveats(data)
     user_cav = _user_caveats(internal)
     if complete_fn is None:
@@ -251,16 +253,15 @@ def generate_report(data: dict, *, complete_fn=None) -> dict:
             from redev.llm.client import complete as complete_fn
         except Exception:
             complete_fn = None
+    # ★공통 메타: source_facts(출처 — 화면 툴팁/클릭용, 표시 안 함) + caveats. 환각검증은 facts 전체 기준.
+    meta = {"caveats_user": user_cav, "caveats_internal": internal, "source_facts": facts}
     if complete_fn is not None:
         try:
-            user = json.dumps({"표시값": facts, "한계": user_cav}, ensure_ascii=False, indent=2)
+            user = json.dumps({"표시값": body_facts}, ensure_ascii=False, indent=2)
             text = complete_fn(_SYSTEM, user)
             return {"report_text": text, "source": "llm",
-                    "hallucination": verify_numbers(text, facts, user_cav),
-                    "caveats_user": user_cav, "caveats_internal": internal}
+                    "hallucination": verify_numbers(text, facts, user_cav), **meta}
         except Exception as e:
             data = {**data, "_llm_error": str(e)[:80]}
-    text = _template_report(facts, user_cav)
-    return {"report_text": text, "source": "template",
-            "hallucination": verify_numbers(text, facts, user_cav),
-            "caveats_user": user_cav, "caveats_internal": internal}
+    return {"report_text": _template_report(body_facts), "source": "template",
+            "hallucination": verify_numbers(_template_report(body_facts), facts, user_cav), **meta}
