@@ -67,8 +67,9 @@ def _display_facts(data: dict) -> dict:
     if mc:
         def _wp(x):                                       # 평당가 — 결측은 '거래 부족'(어색한 '값없음/평' 회피)
             return "거래 부족" if x is None or (isinstance(x, float) and x != x) else f"{int(round(x)):,}만원/평"
-        f["시세맥락"] = (f"빌라 대지지분 {_wp(mc.get('land_share_pyung_man'))} · "
-                      f"신축 전용 {_wp(mc.get('newbuild_exclu_pyung_man'))}")
+        lp, npv = mc.get("land_provenance"), mc.get("newbuild_provenance")   # ★출처·표본(환경점수 수준 정직성)
+        f["시세맥락"] = (f"빌라 대지지분 {_wp(mc.get('land_share_pyung_man'))}" + (f"({lp})" if lp else "")
+                      + f" · 신축 전용 {_wp(mc.get('newbuild_exclu_pyung_man'))}" + (f"({npv})" if npv else ""))
     else:
         f["시세맥락"] = "시세 산출 불가(반경 내 거래 부족)"
 
@@ -232,6 +233,8 @@ _SYSTEM = (
     "(2) ★각 절 1~2줄, 명사형으로 간결하게(군더더기·수식어 금지). 예: '빌라 대지지분 6,360만원/평'.\n"
     "(3) 결론 문장·환경 순위·후보/지정 판정은 ★쓰지 마라 — 화면 상단 카드가 따로 표시한다(중복 금지).\n"
     "(4) ★표시값의 숫자·문자열 그대로(변형·창작 금지). 표시값에 없으면 쓰지 마라.\n"
+    "(4-1) ★시세값에는 표시값 '시세맥락'의 괄호 출처(예: '동 평균 N건', '반경 100m 실거래 N건', '반경 1km 신축 N건')를 "
+    "반드시 그대로 함께 적어라 — 생략 금지(사용자가 '주변 실거래'로 오인 방지).\n"
     "(5) '언제'에 '잔여기간' 없으면 단계·기간을 만들지 말고 '단계상태' 문구 그대로.\n"
     "(6) '한계·주의'는 쓰지 마라 — 화면이 따로 접힘으로 표시한다. 투자 권유 표현 금지(참고치)."
 )

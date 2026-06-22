@@ -185,7 +185,8 @@ def build_serve_context(*, log=print):
     jibun_index = build_jibun_index(parcels)
     trades, _ = load_transactions(jibun_index, sigungu_codes=codes, months=months)
     tgt = build_target(parcels, trades, current_ym="202606").set_index("pnu")
-    comp = comparable_newbuild(parcels, trades).set_index("pnu")["comp_pyung"]
+    comp_df = comparable_newbuild(parcels, trades).set_index("pnu")
+    comp = comp_df["comp_pyung"]
     log(f"[avm] 거래 {len(trades):,} ({time.time()-t0:.0f}s 누적)")
 
     name2code = {d["name"]: d["sigungu_code"] for d in inference_districts()}   # 주소파싱용 전역 25구명
@@ -210,4 +211,5 @@ def build_serve_context(*, log=print):
     return Context(parcels, buildings, pnu_to_idx, None, jibun_index,    # edge_index=None(런타임 미사용)
                    scores, calibrated, pnu_cluster, float(thr),
                    tgt["target_pyung"], tgt["agg_level"], comp, name2code, zv,
-                   pnu_zone=pnu_zone, zone_attrs=zone_attrs)
+                   pnu_zone=pnu_zone, zone_attrs=zone_attrs,
+                   n_target=tgt["n_trades"], n_comp=comp_df["n_trades"])   # ★시세 표본수(출처 표기)

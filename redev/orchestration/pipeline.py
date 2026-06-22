@@ -35,6 +35,8 @@ class Context:
     zone_vectors: object = None   # 사례검색용 51구역 벡터(retrieval)
     pnu_zone: dict = None         # pnu → 지정구역 zone_id (고시 계획정보 조회용)
     zone_attrs: dict = None       # zone_id → 고시 계획정보(용적률·세대수 등, verified/flagged)
+    n_target: pd.Series = None    # pnu → 대지지분 시세 표본 거래수(출처 표기, R16)
+    n_comp: pd.Series = None      # pnu → 비교신축 표본 거래수
 
 
 def build_context() -> Context:
@@ -247,10 +249,14 @@ def run(address: str, ctx: Context, *, property_type: str | None = None, stage: 
 
     # ⑤ avm 시세 맥락(후보 여부 무관 — 진단)
     if pnu in ctx.target.index:
+        nt = getattr(ctx, "n_target", None)                 # 구 피클 호환(없으면 None)
+        ncp = getattr(ctx, "n_comp", None)
         out["stages"]["진단_시세맥락"] = _stage(
             market_context, float(ctx.target.get(pnu)),
             float(ctx.comp.get(pnu)) if pnu in ctx.comp.index and pd.notna(ctx.comp.get(pnu)) else float("nan"),
-            agg_level=ctx.agg_level.get(pnu))
+            agg_level=ctx.agg_level.get(pnu),
+            n_trades=(int(nt.get(pnu)) if nt is not None and pnu in nt.index else None),
+            n_comp=(int(ncp.get(pnu)) if ncp is not None and pnu in ncp.index else None))
     else:
         out["stages"]["진단_시세맥락"] = {"status": "skipped", "reason": "반경 내 거래 0(타깃 결측)"}
 
