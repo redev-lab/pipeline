@@ -1,0 +1,24 @@
+lt_c_spbd(도로명주소건물) 컬럼 23개:
+bd_mgt_sn
+bld_e
+bld_s
+bul_eng_nm
+buld_nm
+buld_nm_dc
+buld_no
+buld_se_cd
+emd_cd
+gro_flo_co
+gu
+pk
+pnu
+poi_chk
+rd_nm
+rn_cd
+sido
+sig_cd
+sigungu
+und_flo_co
+xpos
+ypos
+zip_cd

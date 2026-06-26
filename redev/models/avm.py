@@ -45,6 +45,7 @@ def build_target(parcels, trades, *, current_ym: str, cfg=None) -> pd.DataFrame:
     v = v.assign(x=v["pnu"].map(cent.x), y=v["pnu"].map(cent.y)).dropna(subset=["x", "y"])
     v["dong"] = v["pnu"].str[:10]                       # 법정동코드 10자리(폴백 단위)
     dong_med = v.groupby("dong")["pyung"].median()
+    dong_cnt = v.groupby("dong")["pyung"].size()        # ★동 평균의 표본 거래수(출처 표기용)
 
     # 타깃 필지 centroid
     pc = parcels[["pnu"]].copy()
@@ -70,13 +71,15 @@ def build_target(parcels, trades, *, current_ym: str, cfg=None) -> pd.DataFrame:
                 level[k] = f"r{radius}"
                 ntr[k] = len(idx)
 
-    # 동 단위 폴백 (반경서 못 채운 필지)
+    # 동 단위 폴백 (반경서 못 채운 필지) — ★재개발 구역은 거래 동결로 폴백 흔함
     todo = np.where(level == "missing")[0]
     dmap = pc["dong"].map(dong_med).to_numpy()
+    cmap = pc["dong"].map(dong_cnt).to_numpy()
     for k in todo:
         if not np.isnan(dmap[k]):
             target[k] = dmap[k]
             level[k] = "dong"
+            ntr[k] = int(cmap[k])                       # ★동 평균 표본수 기록(신뢰도 표기)
 
     return pd.DataFrame({"pnu": pc["pnu"].values, "target_pyung": target,
                          "agg_level": level, "n_trades": ntr})
@@ -146,13 +149,27 @@ def comparable_newbuild(parcels, trades, *, current_year: int = 2026, cfg=None) 
     tree = cKDTree(apt[["x", "y"]].to_numpy())
     prices = apt["pyung"].to_numpy()
     out = np.full(len(pc), np.nan)
+    nout = np.zeros(len(pc), dtype=int)                                       # ★표본 거래수(출처 표기)
     for k, idx in enumerate(tree.query_ball_point(pc[["x", "y"]].to_numpy(), r=cfg["radius_m"])):
         if len(idx) >= cfg["min_trades"]:
-            out[k] = np.median(prices[idx])
-    return pd.DataFrame({"pnu": pc["pnu"].values, "comp_pyung": out})
+            out[k] = np.median(prices[idx]); nout[k] = len(idx)
+    return pd.DataFrame({"pnu": pc["pnu"].values, "comp_pyung": out, "n_trades": nout})
 
 
-def market_context(target_pyung: float, comp_pyung: float, *, agg_level=None, n_trades=None) -> dict:
+def _land_provenance(agg_level, n) -> str:
+    """대지지분 시세 출처 문구 — 환경점수 caveat과 같은 수준으로 '무슨 값인지' 명시(오인 차단)."""
+    n = int(n) if n else 0
+    if agg_level == "r50":
+        return f"반경 50m 실거래 {n}건"
+    if agg_level == "r100":
+        return f"반경 100m 실거래 {n}건"
+    if agg_level == "dong":
+        return f"주변 거래 부족 → 동 평균 {n}건"      # ★재개발 구역 동결 흔함 — '주변 시세' 오인 차단
+    return "거래 없음"
+
+
+def market_context(target_pyung: float, comp_pyung: float, *, agg_level=None,
+                   n_trades=None, n_comp=None) -> dict:
     """★"시세 맥락"(상승여력 단정 회피, R14·R15). 두 사실을 *병렬* 제시 — 빼기 금지.
 
     ★측정 실증(2026-06-12): 대지지분 평당가 vs 전용 평당가는 단위가 달라 1:1로 빼면 음수
@@ -164,10 +181,13 @@ def market_context(target_pyung: float, comp_pyung: float, *, agg_level=None, n_
     """
     def _n(x):                                       # ★NaN→None (JSON 직렬화 불가 차단 — comp 결측 등)
         return None if x is None or (isinstance(x, float) and x != x) else x
+    nc = int(n_comp) if n_comp else 0
     return {
         "land_share_pyung_man": _n(target_pyung),   # 인근 빌라 대지지분 평당가(만원/평)
         "newbuild_exclu_pyung_man": _n(comp_pyung), # 인근 신축 아파트 전용 평당가(만원/평)
-        "confidence": {"agg_level": agg_level, "n_trades": _n(n_trades)},
+        "land_provenance": _land_provenance(agg_level, n_trades),          # ★대지지분 출처·표본
+        "newbuild_provenance": (f"반경 1km 신축 {nc}건" if _n(comp_pyung) is not None and nc else "거래 부족"),
+        "confidence": {"agg_level": agg_level, "n_target": _n(n_trades), "n_comp": _n(n_comp)},
         "note": "두 값은 단위가 다르다(대지지분 평당 vs 전용 평당) — 직접 빼지 않는다(시세 맥락).",
         "caveats": [
             "상승여력 수치는 v1 보류. 정직 계산엔 용적률·비례율·조합원분양가 필요(v1.1).",

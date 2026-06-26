@@ -69,6 +69,38 @@ def report(address: str, ctx, *, property_type: str | None = None, stage: str | 
     return run(address, ctx, property_type=property_type, stage=stage, with_report=True)
 
 
+def partial_report(pnu: str, *, gidx: dict, scores_df) -> dict:
+    """★7구 밖 부분 리포트 — 전역 캐시·사이드카로 '환경 점수 + 판정(지정/후보)'만. 상세는 미제공(정직).
+
+    시세·노후도·접도율·사례는 7구 ctx 의존이라 전역서 못 줌 → 화면에 명확히 '미제공' 표시(과신 방지).
+    run()과 호환 형태(stages·verdict·in_zone·candidate·report) 반환 + scope='global_partial' 플래그.
+    """
+    from redev.orchestration.pipeline import _verdict
+
+    pi = int(pnu)
+    out = {"pnu": pnu, "scope": "global_partial",
+           "in_zone": pi in gidx["zones"], "candidate": pi in gidx["clusters"]}
+    row = scores_df[scores_df["pnu"] == pnu]
+    if len(row):
+        sp = float(row["score_pct"].iloc[0])
+        top = round(100 * (1 - sp), 1)                      # 상위 X% (구내 백분위, /screen과 동일 기준)
+        phrase = f"상위 {top}%" if top <= 50 else f"하위 {round(100 - top, 1)}%"
+        out["stages"] = {"예언_환경점수": {"status": "ok", "result": {
+            "label": "재개발 환경 점수", "rank_top_pct": top, "rank_phrase": phrase,
+            "raw_score": float(row["score"].iloc[0])}}}
+    else:
+        out["stages"] = {"예언_환경점수": {"status": "error", "reason": "전역 캐시에 점수 없음"}}
+    out["verdict"] = _verdict(out)                          # 결정론 결론(in_zone/candidate 반영) 재사용
+    note = ("이 지역은 학습 지역(7구) 밖 — 환경 점수·판정만 제공합니다. "
+            "시세·노후도·접도율 등 상세는 미제공(상세는 7구만). "
+            "점수·판정은 전역 캐시 기반으로, 7구 상세검증을 거치지 않은 값이니 참고로만.")
+    out["caveats"] = [note]
+    out["report"] = {"report_text": "", "source": "partial", "partial_note": note,
+                     "hallucination": {"ok": True, "unmatched": []},
+                     "caveats_user": [note], "source_facts": {}}
+    return out
+
+
 def load_serve_context(*, rebuild: bool = False, log=print):
     """★서버 기동 진입점 — 직렬화된 컨텍스트가 있으면 로드(빠름), 없으면 빌드 후 저장.
 
@@ -101,7 +133,7 @@ def build_serve_context(*, log=print):
     """
     import numpy as np
     from redev.config import inference_districts, load_infer_config
-    from redev.data.ingest.building_gis import load_buildings
+    from redev.data.ingest.building_gis import load_buildings_national
     from redev.data.ingest.parcels import build_jibun_index, load_parcels
     from redev.data.ingest.transactions import load_transactions
     from redev.data.ingest.zone_boundary import load_zones
@@ -118,7 +150,11 @@ def build_serve_context(*, log=print):
     codes = report_codes()                                             # ★/report 서브셋(8GB 메모리 한계, R10)
     t0 = time.time()
     parcels, _ = load_parcels(_vsizip(*_SRC["parcels"]), codes, with_geometry=True)
-    buildings, _ = load_buildings(_vsizip(*_SRC["buildings"]), with_geometry=False)
+    # ★서빙 건물 = 1유형 국가표준(일반+집합) + 건축HUB 표제부 backfill(#3-b-2, zone_vectors 기준 안정화).
+    _bf = DATA / "processed/backfill_useapr.parquet"
+    buildings, _ = load_buildings_national(_vsizip(*_SRC["buildings_national_d162"]),
+                                           _vsizip(*_SRC["buildings_national_d164"]),
+                                           backfill_path=str(_bf), with_geometry=False)
     log(f"[load] {len(codes)}구(서브셋) parcels {len(parcels):,} ({time.time()-t0:.0f}s)")
 
     aug = prepare_baseline_matrix()                                   # 4구 라벨(학습 동결)
@@ -153,7 +189,8 @@ def build_serve_context(*, log=print):
     jibun_index = build_jibun_index(parcels)
     trades, _ = load_transactions(jibun_index, sigungu_codes=codes, months=months)
     tgt = build_target(parcels, trades, current_ym="202606").set_index("pnu")
-    comp = comparable_newbuild(parcels, trades).set_index("pnu")["comp_pyung"]
+    comp_df = comparable_newbuild(parcels, trades).set_index("pnu")
+    comp = comp_df["comp_pyung"]
     log(f"[avm] 거래 {len(trades):,} ({time.time()-t0:.0f}s 누적)")
 
     name2code = {d["name"]: d["sigungu_code"] for d in inference_districts()}   # 주소파싱용 전역 25구명
@@ -178,4 +215,5 @@ def build_serve_context(*, log=print):
     return Context(parcels, buildings, pnu_to_idx, None, jibun_index,    # edge_index=None(런타임 미사용)
                    scores, calibrated, pnu_cluster, float(thr),
                    tgt["target_pyung"], tgt["agg_level"], comp, name2code, zv,
-                   pnu_zone=pnu_zone, zone_attrs=zone_attrs)
+                   pnu_zone=pnu_zone, zone_attrs=zone_attrs,
+                   n_target=tgt["n_trades"], n_comp=comp_df["n_trades"])   # ★시세 표본수(출처 표기)

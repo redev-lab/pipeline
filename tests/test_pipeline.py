@@ -44,8 +44,19 @@ def test_road_address_friendly_error():
 
 
 def test_out_of_scope_gu():
-    with pytest.raises(ValueError, match="4구"):
+    with pytest.raises(ValueError, match="구 미인식"):       # 4구 _ctx name2code 밖(문구: 서울 25구 밖이거나 구 미인식)
         address_to_pnu("강남구 역삼동 100", _ctx())
+
+
+def test_scoped_full_and_partial():                          # ★부분 전역화 — 7구 full vs 전역 사이드카 partial
+    from redev.orchestration.pipeline import address_to_pnu_scoped
+    from redev.serve.global_index import _key_hash
+    ctx = _ctx()
+    assert address_to_pnu_scoped("성북구 정릉동 170-1", ctx, None) == ("1129013300101700001", "full")
+    kh = _key_hash("11290", "장위동", 68, 422)               # jibun_index엔 없고 gidx엔 있음 → partial
+    gidx = {"kh": np.array([kh], dtype=np.int64), "pn": np.array([1129010600100680422], dtype=np.int64),
+            "zones": set(), "clusters": set()}
+    assert address_to_pnu_scoped("성북구 장위동 68-422", ctx, gidx) == ("1129010600100680422", "partial")
 
 
 def test_stage_wrapper_catches():

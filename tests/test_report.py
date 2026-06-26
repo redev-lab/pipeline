@@ -159,7 +159,7 @@ def test_similar_case_uses_display_name_not_raw_code():  # §B-3
         {"zone_id": "11590NTC202409250002", "display_name": "동작구 노량진동 일대 (2009)",
          "similarity": 0.91, "t": 2009}]}}
     f = _display_facts(d)
-    assert "동작구 노량진동 일대 (2009)" in f["유사사례"]
+    assert "동작구 노량진동 일대 (2009년 지정)" in f["유사사례"]   # 연도 라벨 '(2009)'→'(2009년 지정)'
     assert "11590NTC" not in f["유사사례"]          # 원시코드 노출 안 함
 
 

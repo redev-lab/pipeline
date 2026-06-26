@@ -28,7 +28,7 @@ def build_inference_scores(*, force_rebuild: bool = False, log=print) -> pd.Data
         return pd.read_parquet(_CACHE)
 
     from redev.config import inference_sigungu_codes
-    from redev.data.ingest.building_gis import load_buildings
+    from redev.data.ingest.building_gis import load_buildings_national
     from redev.data.ingest.parcels import load_parcels
     from redev.graph.build import build_graph
     from redev.models.baseline import _SRC, _vsizip, prepare_baseline_matrix
@@ -37,7 +37,11 @@ def build_inference_scores(*, force_rebuild: bool = False, log=print) -> pd.Data
     codes = sorted(inference_sigungu_codes())
     t0 = time.time()
     parcels, _ = load_parcels(_vsizip(*_SRC["parcels"]), codes, with_geometry=True)   # 전역 1회 적재
-    buildings, _ = load_buildings(_vsizip(*_SRC["buildings"]), with_geometry=False)   # 서울 전체(조인서 클립)
+    # ★추론 건물 = 1유형 국가표준(일반+집합) + 건축HUB 표제부 backfill(#3-b-2). 학습은 서울 4유형 유지.
+    buildings, _ = load_buildings_national(_vsizip(*_SRC["buildings_national_d162"]),
+                                           _vsizip(*_SRC["buildings_national_d164"]),
+                                           backfill_path=str(DATA / "processed/backfill_useapr.parquet"),
+                                           with_geometry=False)
     log(f"[load] {len(codes)}구 parcels {len(parcels):,} + buildings {len(buildings):,} ({time.time()-t0:.0f}s)")
 
     aug = prepare_baseline_matrix()                                  # 4구 라벨(학습 동결)

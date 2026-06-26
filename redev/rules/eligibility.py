@@ -34,7 +34,7 @@ def toheo_status(property_type: str, *, danji_qualified: bool = False, cfg=None)
         "residence_duty": duty,
         "basis_date": th["basis_date"],
         "caveats": [
-            f"★토허는 수시 지정·해제 — 위 판정은 {th['basis_date']} 기준. 매 사용 시 현행 고시 재확인.",
+            f"★토허는 수시로 지정·해제됩니다. 위 판정은 {th['basis_date']} 기준이며, 매 사용 시 현행 고시를 재확인하세요.",
             "상업 배포 전 법률 검토 필수(R15).",
         ],
     }
@@ -48,17 +48,17 @@ def stage_remaining(stage: str | None, *, in_zone: bool = True, cfg=None) -> dic
     - stage=None(단계 미입력): 추정하지 않음(기본값을 실재 단계로 둔갑시키지 않는다).
     """
     if not in_zone:
-        return {"stage": None, "known": False, "note": "지정·추진 구역 아님 — 사업 단계 없음"}
+        return {"stage": None, "known": False, "note": "지정·추진 구역이 아니라 사업 단계가 없습니다."}
     if not stage:
-        return {"stage": None, "known": False, "note": "사업 단계 미입력 — 잔여기간 추정 안 함"}
+        return {"stage": None, "known": False, "note": "사업 단계가 입력되지 않아 잔여기간을 추정하지 않습니다."}
     tbl = (cfg or load_eligibility_config())["stage_remaining_years"]
     r = tbl.get(stage)
     if r is None:
         return {"stage": stage, "known": False,
-                "note": "미등록 단계 — 잔여기간 추정 불가(거짓값 내지 않음)."}
+                "note": "미등록 단계라 잔여기간을 추정할 수 없습니다(거짓값 내지 않음)."}
     return {
         "stage": stage, "known": True, "remaining_years": r,
-        "caveats": ["범위·변동 큼 — 분쟁·경기·분양 등 외생변수가 좌우(R18). 단정 아님(§6 예언)."],
+        "caveats": ["범위·변동이 큽니다. 분쟁·경기·분양 등 외생변수가 좌우합니다(R18). 단정 아님(§6 예언)."],
     }
 
 

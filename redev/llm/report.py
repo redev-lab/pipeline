@@ -67,8 +67,9 @@ def _display_facts(data: dict) -> dict:
     if mc:
         def _wp(x):                                       # 평당가 — 결측은 '거래 부족'(어색한 '값없음/평' 회피)
             return "거래 부족" if x is None or (isinstance(x, float) and x != x) else f"{int(round(x)):,}만원/평"
-        f["시세맥락"] = (f"빌라 대지지분 {_wp(mc.get('land_share_pyung_man'))} · "
-                      f"신축 전용 {_wp(mc.get('newbuild_exclu_pyung_man'))}")
+        lp, npv = mc.get("land_provenance"), mc.get("newbuild_provenance")   # ★출처·표본(환경점수 수준 정직성)
+        f["시세맥락"] = (f"빌라 대지지분 {_wp(mc.get('land_share_pyung_man'))}" + (f"({lp})" if lp else "")
+                      + f". 신축 전용 {_wp(mc.get('newbuild_exclu_pyung_man'))}" + (f"({npv})" if npv else ""))
     else:
         f["시세맥락"] = "시세 산출 불가(반경 내 거래 부족)"
 
@@ -102,6 +103,7 @@ def _display_facts(data: dict) -> dict:
     if cases:
         c = cases[0]
         name = c.get("display_name") or c.get("zone_id")   # §B-3: 표시명 우선, 원시코드는 폴백·메타
+        name = re.sub(r"\((\d{4})\)", r"(\1년 지정)", name)  # "(2009)"→"(2009년 지정)" — 히어로 표기와 통일
         f["유사사례"] = f"{name} {int(round(c['similarity']*100))}% 유사"
     soc = data.get("social", {})
     f["사회신호"] = soc.get("status", "신호 없음")
@@ -232,9 +234,25 @@ _SYSTEM = (
     "(2) ★각 절 1~2줄, 명사형으로 간결하게(군더더기·수식어 금지). 예: '빌라 대지지분 6,360만원/평'.\n"
     "(3) 결론 문장·환경 순위·후보/지정 판정은 ★쓰지 마라 — 화면 상단 카드가 따로 표시한다(중복 금지).\n"
     "(4) ★표시값의 숫자·문자열 그대로(변형·창작 금지). 표시값에 없으면 쓰지 마라.\n"
+    "(4-1) ★시세값에는 표시값 '시세맥락'의 괄호 출처(예: '동 평균 N건', '반경 100m 실거래 N건', '반경 1km 신축 N건')를 "
+    "반드시 그대로 함께 적어라 — 생략 금지(사용자가 '주변 실거래'로 오인 방지).\n"
     "(5) '언제'에 '잔여기간' 없으면 단계·기간을 만들지 말고 '단계상태' 문구 그대로.\n"
     "(6) '한계·주의'는 쓰지 마라 — 화면이 따로 접힘으로 표시한다. 투자 권유 표현 금지(참고치)."
 )
+
+
+def _naturalize(text: str) -> str:
+    """AI 티 구분자 후처리 — 긴 줄표(' — ')와 절 잇는 ' · '(공백 포함)를 마침표로.
+
+    ★단어 안 '·'(노후·불량/지정·추진/시세·계획)는 공백이 없어 보존된다(타깃은 ' · ' join뿐).
+    LLM이 facts를 옮기며 넣은 구분자까지 잡는 안전망(템플릿은 별도로 직접 수정).
+    """
+    if not text:
+        return text
+    text = re.sub(r"\s+—\s+", ". ", text)          # 긴 줄표 → 마침표
+    text = re.sub(r"\s+·\s+", ". ", text)           # 절 잇는 가운뎃점(공백 양쪽) → 마침표
+    text = re.sub(r"\.\s*\.", ".", text)            # 중복 마침표 정리
+    return text
 
 
 def generate_report(data: dict, *, complete_fn=None) -> dict:
@@ -247,7 +265,7 @@ def generate_report(data: dict, *, complete_fn=None) -> dict:
     facts = _display_facts(data)
     body_facts = {k: v for k, v in facts.items() if k not in _CARD_KEYS}   # 카드 키 제외(본문 중복 방지)
     internal = _all_caveats(data)
-    user_cav = _user_caveats(internal)
+    user_cav = [_naturalize(c) for c in _user_caveats(internal)]   # 사용자 caveat도 구분자 정리
     if complete_fn is None:
         try:
             from redev.llm.client import complete as complete_fn
@@ -258,10 +276,11 @@ def generate_report(data: dict, *, complete_fn=None) -> dict:
     if complete_fn is not None:
         try:
             user = json.dumps({"표시값": body_facts}, ensure_ascii=False, indent=2)
-            text = complete_fn(_SYSTEM, user)
+            text = _naturalize(complete_fn(_SYSTEM, user))    # ★LLM 출력 구분자 후처리
             return {"report_text": text, "source": "llm",
                     "hallucination": verify_numbers(text, facts, user_cav), **meta}
         except Exception as e:
             data = {**data, "_llm_error": str(e)[:80]}
-    return {"report_text": _template_report(body_facts), "source": "template",
-            "hallucination": verify_numbers(_template_report(body_facts), facts, user_cav), **meta}
+    text = _naturalize(_template_report(body_facts))
+    return {"report_text": text, "source": "template",
+            "hallucination": verify_numbers(text, facts, user_cav), **meta}

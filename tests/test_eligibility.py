@@ -43,14 +43,14 @@ def test_stage_suppressed_when_not_in_zone():
     """★계약 §11-3: 후보 구역 아니면 단계·잔여기간 출력 금지(기본값 누수 차단)."""
     sr = stage_remaining("사업시행인가", in_zone=False)
     assert sr["known"] is False and "remaining_years" not in sr
-    assert sr["stage"] is None and "구역 아님" in sr["note"]
+    assert sr["stage"] is None and "구역이 아니라" in sr["note"]
 
 
 def test_stage_suppressed_when_no_stage_input():
     """★계약 §11-3: 단계 미입력(None)이면 기본값으로 둔갑시키지 않고 추정 안 함."""
     sr = stage_remaining(None, in_zone=True)
     assert sr["known"] is False and "remaining_years" not in sr
-    assert "미입력" in sr["note"]
+    assert "입력되지 않" in sr["note"]
     # 비후보 + 단계 입력이어도 구역 아님이 우선(잔여기간 안 나옴)
     out = score_eligibility("다세대", "사업시행인가", in_zone=False)
     assert out["예언_잔여기간"]["known"] is False
