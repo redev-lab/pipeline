@@ -69,13 +69,18 @@ def cluster_metrics(pnu_set, parcels, buildings, *, current_year: int = 2026, cf
 
 
 def _housing_eligible(m: dict, th: dict) -> tuple[bool, list]:
-    """주택정비형: 노후연면적≥60% AND (접도율≤40% OR 호수밀도≥60). stage1.md §4."""
+    """주택정비형: 노후연면적≥60% AND 접도율≤40%. stage1.md §4.
+
+    ★호수밀도는 게이트에서 제거(소프트화). 근거(_experiments/gis_swap): 25구 전수에서 호수밀도 OR-가지로만
+    구제되던 건 4구역뿐·전부 임계 경계값(60~66)·전부 national swap 시 탈락 → 구제 효과가 swap 앞에서 무력.
+    호수밀도의 정당한 자리는 ML 피처(features.bldg_density)·유사도(case_search)이며, 여기선 표시용으로만 둔다.
+    """
     h = th["housing_redevelopment"]
     oa, ab, hd = m["old_area_ratio"], m["abut_ratio"], m["house_density"]
     old_ok = pd.notna(oa) and oa >= h["old_building_area_ratio"]
     abut_ok = pd.notna(ab) and ab <= h["abutting_road_ratio_max"]
-    dens_ok = pd.notna(hd) and hd >= h["house_density_min"]
-    elig = bool(old_ok and (abut_ok or dens_ok))
+    dens_ok = pd.notna(hd) and hd >= h["house_density_min"]   # ★판정엔 미사용 — 아래 reason 표시용만
+    elig = bool(old_ok and abut_ok)
     reasons = [
         f"노후연면적 {_f(oa)} {'≥' if old_ok else '<'} {h['old_building_area_ratio']}",
         f"접도율 {_f(ab)} {'≤' if abut_ok else '>'} {h['abutting_road_ratio_max']}",
