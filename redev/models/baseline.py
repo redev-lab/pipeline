@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 
 from redev.config import load_graph_config, training_sigungu_codes
-from redev.data.ingest.building_gis import load_buildings
+from redev.data.ingest.building_gis import load_buildings, load_buildings_national
 from redev.data.ingest.cancelled import load_cancelled
 from redev.data.ingest.parcels import build_jibun_index, load_parcels
 from redev.data.ingest.zone_boundary import load_zones
@@ -44,7 +44,10 @@ def _vsizip(zip_name: str, inner: str) -> str:
 
 # 원천 파일 매핑 — 한 곳에 모아 교체 지점을 명시(§11 소스 추상화).
 _SRC = {
-    "buildings": ("서울시GIS건물통합정보2026.zip", "AL_D010_11_20260609.shp"),
+    "buildings": ("서울시GIS건물통합정보2026.zip", "AL_D010_11_20260609.shp"),   # 서울 4유형(상업금지) — 학습 유지
+    # ★1유형(상업가능) 국가표준 GIS건물 — 추론/서빙 소스(#3-b-1). 학습은 #3-c에서 교체.
+    "buildings_national_d162": ("gis건물일반정보 두가지 종류/AL_D162_11_20260115.zip", "AL_D162_11_20260115.shp"),
+    "buildings_national_d164": ("gis건물일반정보 두가지 종류/AL_D164_11_20260115.zip", "AL_D164_11_20260115.shp"),
     "parcels":   ("서울시연속지적도2026.zip", "AL_D002_11_20260608.shp"),
     "uq":        ("UQ181_의제처리구역_202602.zip", "shp파일/UPIS_C_UQ181.shp"),
     "gosi":          "서울시 도시계획 결정고시 정보.csv",
@@ -86,7 +89,11 @@ def _assemble() -> TrainingMatrix:
     codes = training_sigungu_codes()
 
     # ① ingest. 건물은 노후도용이라 geometry 불필요(R10), 필지는 그래프용이라 필요.
-    buildings, _ = load_buildings(_vsizip(*_SRC["buildings"]), with_geometry=False)
+    #    ★#3-c: 학습 건물도 1유형 national+backfill로 교체 — 추론과 동일 분포로 train-serve skew 해소.
+    buildings, _ = load_buildings_national(_vsizip(*_SRC["buildings_national_d162"]),
+                                           _vsizip(*_SRC["buildings_national_d164"]),
+                                           backfill_path=str(_PROCESSED / "backfill_useapr.parquet"),
+                                           with_geometry=False)
     parcels, _ = load_parcels(_vsizip(*_SRC["parcels"]), codes, with_geometry=True)
     zone_table, _ = load_zones(
         _vsizip(*_SRC["uq"]), str(_RAW / _SRC["gosi"]), parcels, codes,
@@ -296,7 +303,10 @@ def build_neighbor_features(
 
 def _load_parcels_buildings():
     """이웃집계가 필요로 하는 원천 둘만 적재(라벨 없는 이웃의 피처 계산용)."""
-    buildings, _ = load_buildings(_vsizip(*_SRC["buildings"]), with_geometry=False)
+    buildings, _ = load_buildings_national(_vsizip(*_SRC["buildings_national_d162"]),   # ★#3-c national+backfill
+                                           _vsizip(*_SRC["buildings_national_d164"]),
+                                           backfill_path=str(_PROCESSED / "backfill_useapr.parquet"),
+                                           with_geometry=False)
     parcels, _ = load_parcels(_vsizip(*_SRC["parcels"]), training_sigungu_codes(), with_geometry=True)
     return parcels, buildings
 

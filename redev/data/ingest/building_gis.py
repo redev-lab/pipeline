@@ -30,6 +30,18 @@ _COLUMN_MAP = {
 }
 _SRC_COLUMNS = list(_COLUMN_MAP.keys())
 
+# ★국가표준 GIS건물(AL_D162 일반 + AL_D164 집합, 공공누리 1유형) 어댑터.
+# 서울 AL_D010과 A-코드 레이아웃이 다르다(_experiments/gis_swap 실증: 서울 A13과 사용승인일
+# 정확일치 99.9%·연면적 상관 0.9955·구조 100%). A7(토지대장구분) 대응 없음 → land_div는 None.
+_COLUMN_MAP_NATIONAL = {
+    "A1": "pnu",
+    "A35": "approval_raw",     # 사용승인일(A34=허가/착공이 아님 — 실증으로 A35 확정)
+    "A28": "structure_raw",
+    "A24": "gross_floor_area",
+    "A39": "sigungu",
+}
+_SRC_COLUMNS_NATIONAL = list(_COLUMN_MAP_NATIONAL.keys())
+
 # 구조명 → 내구성 분류. rc(내구구조)는 긴 경과연수 기준(config rc_years),
 # 그 외는 짧은 기준(other_years). ★연수 임계값은 config(규칙5), 분류 키워드만 여기.
 _RC_KEYWORDS = ("철근콘크리트", "철골", "강구조", "라멘", "프리캐스트", "피씨", "p.c", "pc조")
@@ -101,7 +113,17 @@ def load_buildings(path: str, *, with_geometry: bool = False) -> tuple[pd.DataFr
             path, columns=_SRC_COLUMNS, read_geometry=False, encoding="cp949"
         ).rename(columns=_COLUMN_MAP)
 
+    return _finalize(df)
+
+
+def _finalize(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """원천 무관 공통 정제 — 서울(load_buildings)·국가표준(load_buildings_national) 공유.
+
+    입력 df: [pnu, approval_raw, structure_raw, gross_floor_area, sigungu(, land_div)] 원시.
+    """
     total = len(df)
+    if "land_div" not in df.columns:
+        df["land_div"] = None     # 국가표준엔 토지대장구분 없음(노후도·밀도 무관)
 
     # ── 정제: PNU 표준화·연도 파싱·구조 분류·연면적 수치화 ──
     df["pnu"] = df["pnu"].map(_safe_normalize_pnu)
@@ -113,12 +135,22 @@ def load_buildings(path: str, *, with_geometry: bool = False) -> tuple[pd.DataFr
     n_bad_pnu = int(df["pnu"].isna().sum())
     df = df[df["pnu"].notna()].copy()
 
+    # ── ★빈 폴리곤 제거: 연면적<=0/결측 AND 사용승인일 없음 = 부속·무허가·미등록 더미.
+    #    호수밀도(stage1 len(cbld))를 부풀리는 노이즈 — 실측(_experiments/gis_swap): 빈 폴리곤이
+    #    서울 호수밀도 통과율을 9%→23%로 부풀리고, 격자표본 AUC를 가렸다. AND 조건(둘 다 없을 때만)으로
+    #    보수적 제거. 노후도(old_ratio)는 approval 결측을 이미 시점필터로 빼므로 이 제거로 불변.
+    no_area = df["gross_floor_area"].isna() | (df["gross_floor_area"] <= 0)
+    no_approval = df["approval_year"].isna()
+    n_empty = int((no_area & no_approval).sum())
+    df = df[~(no_area & no_approval)].copy()
+
     # 불필요한 원본 컬럼 정리
     df = df.drop(columns=["approval_raw", "structure_raw"])
 
     report = {
         "total_rows": total,
         "dropped_bad_pnu": n_bad_pnu,
+        "dropped_empty_polygon": n_empty,
         "kept_rows": len(df),
         "approval_year_missing_rate": round(float(df["approval_year"].isna().mean()), 4),
         "structure_counts": df["structure"].value_counts().to_dict(),
@@ -126,3 +158,45 @@ def load_buildings(path: str, *, with_geometry: bool = False) -> tuple[pd.DataFr
         "n_parcels": int(df["pnu"].nunique()),
     }
     return df, report
+
+
+def load_buildings_national(d162_path: str, d164_path: str, *, backfill_path: str | None = None,
+                            with_geometry: bool = False) -> tuple[pd.DataFrame, dict]:
+    """★국가표준 GIS건물(일반 AL_D162 + 집합 AL_D164) → 정제 건물 테이블 (1유형, 상업가능).
+
+    역할: 서울 4유형(상업금지) load_buildings의 1유형 대체. 어댑터로 A-코드를 서울 레이아웃에
+    맞춰 리네임(_COLUMN_MAP_NATIONAL) 후 _finalize 공유. 일반+집합 두 SHP를 합쳐 로드.
+
+    backfill_path: 건축HUB 표제부 보충 parquet([pnu·approval_year·gross_floor_area·structure]).
+      ★national이 누락한 PNU(노후밀집 실주거)의 사용승인일을 채워 zone_vectors 기준·점수 안정화(#3-b-2).
+      national에 이미 있는 PNU는 중복 추가 안 함(보충만). 어댑터와 동일하게 _finalize가 정제.
+
+    입력: d162_path(일반)·d164_path(집합) — vsizip 경로. with_geometry True면 5186으로 통일.
+    출력: load_buildings와 동일 스키마 [pnu, approval_year, structure, gross_floor_area, land_div, sigungu].
+    """
+    frames = []
+    for path in (d162_path, d164_path):
+        if with_geometry:
+            g = gpd.read_file(path, columns=_SRC_COLUMNS_NATIONAL, encoding="cp949")
+            g = to_target_crs(g)            # ★EPSG:5186 통일(국가표준은 이미 5186이라 사실상 동일)
+            frames.append(g.rename(columns=_COLUMN_MAP_NATIONAL))
+        else:
+            from pyogrio import read_dataframe
+            frames.append(read_dataframe(
+                path, columns=_SRC_COLUMNS_NATIONAL, read_geometry=False, encoding="cp949"
+            ).rename(columns=_COLUMN_MAP_NATIONAL))
+    df = pd.concat(frames, ignore_index=True)
+
+    # ── backfill 통합(있으면): national 누락 PNU만 보충(중복 방지) ──
+    import os
+    if backfill_path and os.path.exists(backfill_path):
+        bf = pd.read_parquet(backfill_path)
+        bf = bf[bf["approval_year"].astype(str).str.len() == 4].copy()
+        bf["pnu"] = bf["pnu"].astype(str).str.zfill(19)
+        bf = bf[~bf["pnu"].isin(set(df["pnu"].astype(str)))]          # national에 없는 PNU만
+        add = pd.DataFrame({"pnu": bf["pnu"], "approval_raw": bf["approval_year"].astype(str),
+                            "structure_raw": bf["structure"],
+                            "gross_floor_area": pd.to_numeric(bf["gross_floor_area"], errors="coerce"),
+                            "sigungu": bf["pnu"].str[:5]})
+        df = pd.concat([df, add], ignore_index=True)
+    return _finalize(df)
