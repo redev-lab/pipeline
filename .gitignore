@@ -220,6 +220,15 @@ __marimo__/
 # 원천 데이터 (라이선스 §11, repo에 커밋 금지)
 _data/
 
+# _experiments 측정 트랙: 추출 SHP·재생성 parquet·대용량 중간산물 제외 (스크립트·RESULT만 추적)
+_experiments/gis_swap/D162/
+_experiments/gis_swap/D164/
+_experiments/gis_swap/seoul_al_d010/
+_experiments/gis_swap/uq181/
+_experiments/**/__pycache__/
+_experiments/gis_swap/*.parquet
+_experiments/gis_swap/feat_*.json
+
 # ── macOS (맥북 협업 시 생기는 OS 쓰레기·바이너리) ──
 .DS_Store
 .DS_Store?
