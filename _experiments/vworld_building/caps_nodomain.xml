@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ServiceExceptionReport version="2.0.0" xmlns="http://www.opengis.net/ogc" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.opengis.net/ogc http://schemas.opengis.net/wfs/1.1.0/exceptions_1_1_0.xsd">
+<ServiceException code="INCORRECT_KEY">인증키 정보가 올바르지 않습니다.</ServiceException>
+</ServiceExceptionReport>
